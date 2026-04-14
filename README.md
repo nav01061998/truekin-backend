@@ -68,9 +68,32 @@ app data tables.
 
 ## Production hosting
 
-Two ready-to-use deployment paths are included:
+### Option A — Vercel (free Hobby tier, no credit card required) ⭐ Recommended
 
-### Option A — Render (simplest, free tier available)
+The repo already ships `vercel.json` and `api/index.ts` — Fastify runs as a
+single Vercel serverless function and all routes are rewritten to it.
+
+```bash
+npm i -g vercel
+vercel login            # opens browser; GitHub or email auth, no card asked
+vercel link             # create a new project named "truekin-backend"
+
+# Push env vars from your local .env file to Vercel (production + preview)
+for key in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY \
+           MSG91_AUTH_KEY MSG91_TEMPLATE_ID MSG91_SENDER_ID \
+           TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_PHONE_NUMBER \
+           ANTHROPIC_API_KEY APP_UPDATE_AVAILABLE APP_UPDATE_AUTOPROMPT \
+           APP_UPDATE_URL; do
+  value=$(grep "^$key=" .env | cut -d= -f2-)
+  [ -n "$value" ] && echo "$value" | vercel env add $key production
+done
+
+vercel --prod
+```
+
+Public URL will be `https://truekin-backend.vercel.app` (or your chosen name).
+
+### Option B — Render (requires card on newer accounts)
 
 1. Push this repo to GitHub.
 2. In Render, "New +" → "Blueprint" → select this repo. Render reads `render.yaml`.
