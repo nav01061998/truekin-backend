@@ -23,10 +23,3 @@ export async function buildApp() {
 
   return app;
 }
-
-// Default export is a ready Fastify instance so Vercel's Node.js Server
-// runtime can boot us directly. Local dev uses `src/index.ts` which calls
-// `.listen()` on `buildApp()`.
-const app = await buildApp();
-await app.ready();
-export default app;
