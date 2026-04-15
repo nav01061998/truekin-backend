@@ -2,6 +2,15 @@ import crypto from "node:crypto";
 import { env } from "../config/env.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 
+/**
+ * BYPASS_PHONE: Test phone number that bypasses OTP verification
+ * - sendOtp: Returns success without sending actual SMS
+ * - verifyOtp: Accepts any 6-digit code without database verification
+ * - User is created/logged in normally with bypass flag set
+ * 
+ * This allows testing the full auth flow without sending SMS.
+ * Frontend should not show special UI for bypass users.
+ */
 const BYPASS_PHONE = "+918547032018";
 const MAX_ATTEMPTS = 5;
 
@@ -139,11 +148,12 @@ async function sendViaTwilio(phone: string, otp: string) {
 }
 
 export async function sendOtp(phone: string) {
+  // Bypass phone for testing - accepts any 6-digit code without sending OTP
   if (phone === BYPASS_PHONE) {
     return {
       success: true,
-      provider: "bypass",
-      message: "Test mode - any OTP will work",
+      provider: phone.startsWith("+91") ? "msg91" : "twilio",
+      message: "OTP sent successfully",
     };
   }
 
@@ -180,7 +190,11 @@ export async function sendOtp(phone: string) {
 export async function verifyOtp(input: { phone: string; otp: string }) {
   const { phone, otp } = input;
 
-  if (phone === BYPASS_PHONE && otp.length === 6) {
+  // Bypass phone for testing - accepts any 6-digit code without OTP verification
+  if (phone === BYPASS_PHONE) {
+    if (!otp || otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      throw new Error("Incorrect code. Please check and try again.");
+    }
     return createAuthArtifact(phone);
   }
 
