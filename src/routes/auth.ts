@@ -34,6 +34,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         is_new_user: result.isNewUser,
         token_hash: result.tokenHash,
         bypass: result.bypass,
+        user: result.user,
       };
     } catch (error) {
       return reply.code(400).send({

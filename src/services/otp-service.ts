@@ -79,11 +79,21 @@ async function createAuthArtifact(phone: string) {
     throw linkError || new Error("Failed to generate login artifact");
   }
 
+  // Fetch user profile to return with authentication response
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, phone, display_name, gender, age, avatar_url, onboarding_completed")
+    .eq("id", userId)
+    .single();
+
+  if (profileError) throw profileError;
+
   return {
     userId,
     isNewUser,
     tokenHash: linkData.properties.hashed_token,
     bypass: phone === BYPASS_PHONE,
+    user: profile,
   };
 }
 
