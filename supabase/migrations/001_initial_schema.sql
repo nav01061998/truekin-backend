@@ -119,6 +119,21 @@ CREATE TABLE adherence_logs (
 );
 
 -- ============================================
+-- AUTH SESSION LOGS
+-- ============================================
+
+create table if not exists auth_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  session_token_hash text not null,
+  expires_at timestamptz not null,
+  revoked_at timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, session_token_hash)
+);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 CREATE INDEX idx_medications_user ON medications(user_id);

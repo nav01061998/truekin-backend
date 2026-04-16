@@ -11,63 +11,238 @@ import { supabaseAdmin } from "../lib/supabase.js";
  * This allows testing the full auth flow without sending SMS.
  * Frontend should not show special UI for bypass users.
  */
-const BYPASS_PHONE = "+918547032018";
+const BYPASS_PHONE = "918547032018";
 const MAX_ATTEMPTS = 5;
-
-function phoneAliasEmail(phone: string) {
-  return `${phone.replace(/\D/g, "")}@phone.truekin.app`;
-}
+const SESSION_TTL_DAYS = 7;
 
 async function hashOtp(otp: string) {
   return crypto.createHash("sha256").update(otp).digest("hex");
 }
 
-async function createAuthArtifact(phone: string) {
-  const aliasEmail = phoneAliasEmail(phone);
-  const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-  const existingUser = existingUsers.users.find((user) => user.phone === phone);
+type Profile = {
+  id: string;
+  phone: string;
+  display_name: string | null;
+  gender: string | null;
+  age: number | null;
+  avatar_url: string | null;
+  onboarding_completed: boolean;
+};
 
-  let userId: string;
-  let isNewUser = false;
-  let loginEmail = existingUser?.email || aliasEmail;
+type AuthArtifactResult = {
+  userId: string;
+  isNewUser: boolean;
+  tokenHash: string;
+  bypass: boolean;
+  user: Profile;
+};
+
+function normalizePhone(phone: string): string {
+  return phone.trim().replace(/[^\d+]/g, "");
+}
+
+function phoneAliasEmail(phone: string): string {
+  const normalized = normalizePhone(phone);
+  const hash = crypto
+    .createHash("sha256")
+    .update(normalized)
+    .digest("hex")
+    .slice(0, 24);
+
+  return `phone.${hash}@truekin.local`;
+}
+
+function isDuplicateUserError(error: unknown): boolean {
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error ?? "");
+
+  return /already registered|duplicate|unique|conflict/i.test(message);
+}
+
+async function findAuthUserByPhone(phone: string) {
+  const target = normalizePhone(phone);
+  console.log(target)
+  const perPage = 100;
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    console.log(data)
+    if (error) throw error;
+
+    const match = data.users.find(
+      (user) => normalizePhone(user.phone ?? "") === target
+    );
+
+    if (match) return match;
+
+    if (data.users.length < perPage) return null;
+
+    page += 1;
+  }
+}
+
+async function findAuthUserByEmail(email: string) {
+  const target = email.trim().toLowerCase();
+  const perPage = 100;
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+
+    if (error) throw error;
+
+    const match = data.users.find(
+      (user) => (user.email ?? "").trim().toLowerCase() === target
+    );
+
+    if (match) return match;
+
+    if (data.users.length < perPage) return null;
+
+    page += 1;
+  }
+}
+
+async function ensureProfileRow(userId: string, phone: string): Promise<Profile> {
+  const normalizedPhone = normalizePhone(phone);
+
+  const { error: upsertError } = await supabaseAdmin
+    .from("profiles")
+    .upsert(
+      {
+        id: userId,
+        phone: normalizedPhone,
+      },
+      {
+        onConflict: "id",
+      }
+    );
+
+  if (upsertError) throw upsertError;
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select(
+      "id, phone, display_name, gender, age, avatar_url, onboarding_completed"
+    )
+    .eq("id", userId)
+    .single();
+
+  if (profileError) throw profileError;
+  if (!profile) throw new Error("Profile row could not be loaded");
+
+  return profile as Profile;
+}
+
+async function ensureAuthUser(phone: string): Promise<{
+  userId: string;
+  isNewUser: boolean;
+  loginEmail: string;
+}> {
+  const normalizedPhone = normalizePhone(phone);
+  const aliasEmail = phoneAliasEmail(normalizedPhone);
+
+  let existingUser = await findAuthUserByPhone(normalizedPhone);
+  if (!existingUser) {
+    existingUser = await findAuthUserByEmail(aliasEmail);
+  }
 
   if (existingUser) {
-    userId = existingUser.id;
+    const userId = existingUser.id;
+    const loginEmail = existingUser.email || aliasEmail;
+
     const updates: {
       phone: string;
       phone_confirm: true;
       email?: string;
       email_confirm?: true;
+      user_metadata?: Record<string, unknown>;
     } = {
-      phone,
+      phone: normalizedPhone,
       phone_confirm: true,
+      user_metadata: {
+        ...(existingUser.user_metadata ?? {}),
+        phone_alias_email: aliasEmail,
+      },
     };
 
     if (!existingUser.email) {
       updates.email = aliasEmail;
       updates.email_confirm = true;
-      loginEmail = aliasEmail;
     }
 
     const { error } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
       updates
     );
+
     if (error) throw error;
-  } else {
+
+    return {
+      userId,
+      isNewUser: false,
+      loginEmail,
+    };
+  }
+
+  try {
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      phone,
+      phone: normalizedPhone,
       phone_confirm: true,
       email: aliasEmail,
       email_confirm: true,
-      user_metadata: { phone_alias_email: aliasEmail },
+      user_metadata: {
+        phone_alias_email: aliasEmail,
+      },
     });
 
     if (error || !data.user) throw error || new Error("Failed to create user");
-    userId = data.user.id;
-    isNewUser = true;
-    loginEmail = data.user.email || aliasEmail;
+
+    return {
+      userId: data.user.id,
+      isNewUser: true,
+      loginEmail: data.user.email || aliasEmail,
+    };
+  } catch (error) {
+    if (!isDuplicateUserError(error)) {
+      throw error;
+    }
+
+    const fallbackUser =
+      (await findAuthUserByPhone(normalizedPhone)) ||
+      (await findAuthUserByEmail(aliasEmail));
+
+    if (!fallbackUser) {
+      throw error;
+    }
+
+    return {
+      userId: fallbackUser.id,
+      isNewUser: false,
+      loginEmail: fallbackUser.email || aliasEmail,
+    };
   }
+}
+
+export async function createAuthArtifact(phone: string): Promise<AuthArtifactResult> {
+  const normalizedPhone = normalizePhone(phone);
+
+  if (!normalizedPhone) {
+    throw new Error("Phone number is required");
+  }
+
+  const aliasEmail = phoneAliasEmail(normalizedPhone);
+
+  const { userId, isNewUser, loginEmail } = await ensureAuthUser(normalizedPhone);
 
   const { data: linkData, error: linkError } =
     await supabaseAdmin.auth.admin.generateLink({
@@ -79,21 +254,18 @@ async function createAuthArtifact(phone: string) {
     throw linkError || new Error("Failed to generate login artifact");
   }
 
-  // Fetch user profile to return with authentication response
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .select("id, phone, display_name, gender, age, avatar_url, onboarding_completed")
-    .eq("id", userId)
-    .single();
+  const tokenHash = linkData.properties.hashed_token;
 
-  if (profileError) throw profileError;
+  const user = await ensureProfileRow(userId, normalizedPhone);
+
+  await createAuthSession(userId, tokenHash);
 
   return {
     userId,
     isNewUser,
     tokenHash: linkData.properties.hashed_token,
-    bypass: phone === BYPASS_PHONE,
-    user: profile,
+    bypass: normalizedPhone === normalizePhone(BYPASS_PHONE),
+    user,
   };
 }
 
@@ -162,7 +334,7 @@ export async function sendOtp(phone: string) {
   if (phone === BYPASS_PHONE) {
     return {
       success: true,
-      provider: phone.startsWith("+91") ? "msg91" : "twilio",
+      provider: phone.startsWith("91") ? "msg91" : "twilio",
       message: "OTP sent successfully",
     };
   }
@@ -182,7 +354,7 @@ export async function sendOtp(phone: string) {
 
   if (dbError) throw dbError;
 
-  const sendResult = phone.startsWith("+91")
+  const sendResult = phone.startsWith("91")
     ? await sendViaMSG91(phone, otp)
     : await sendViaTwilio(phone, otp);
 
@@ -192,14 +364,13 @@ export async function sendOtp(phone: string) {
 
   return {
     success: true,
-    provider: phone.startsWith("+91") ? "msg91" : "twilio",
+    provider: phone.startsWith("91") ? "msg91" : "twilio",
     message: "OTP sent successfully",
   };
 }
 
 export async function verifyOtp(input: { phone: string; otp: string }) {
   const { phone, otp } = input;
-
   // Bypass phone for testing - accepts any 6-digit code without OTP verification
   if (phone === BYPASS_PHONE) {
     if (!otp || otp.length !== 6 || !/^\d{6}$/.test(otp)) {
@@ -207,7 +378,6 @@ export async function verifyOtp(input: { phone: string; otp: string }) {
     }
     return createAuthArtifact(phone);
   }
-
   const { data: session, error: fetchError } = await supabaseAdmin
     .from("otp_sessions")
     .select("*")
@@ -238,4 +408,25 @@ export async function verifyOtp(input: { phone: string; otp: string }) {
 
   await supabaseAdmin.from("otp_sessions").delete().eq("phone", phone);
   return createAuthArtifact(phone);
+}
+
+
+async function createAuthSession(userId: string, sessionTokenHash: string) {
+  const expiresAt = new Date(
+    Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const { error } = await supabaseAdmin.from("auth_sessions").upsert(
+    {
+      user_id: userId,
+      session_token_hash: sessionTokenHash,
+      expires_at: expiresAt,
+      revoked_at: null,
+    },
+    {
+      onConflict: "user_id,session_token_hash",
+    }
+  );
+
+  if (error) throw error;
 }

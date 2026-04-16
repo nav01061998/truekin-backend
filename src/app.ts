@@ -5,6 +5,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerHomeRoutes } from "./routes/home.js";
 import { registerSupportRoutes } from "./routes/support.js";
 import { registerPrescriptionRoutes } from "./routes/prescriptions.js";
+import { registerProfileRoutes } from "./routes/profile.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -20,6 +21,7 @@ export async function buildApp() {
   await registerHomeRoutes(app);
   await registerSupportRoutes(app);
   await registerPrescriptionRoutes(app);
+  await registerProfileRoutes(app);
 
   return app;
 }
