@@ -4,6 +4,7 @@ import {
   completeOnboarding,
   getCurrentUserProfile,
   updateDisplayName,
+  markUserJourneySelectionShown,
 } from "../services/profile-service.js";
 
 function readHeader(value: unknown): string | undefined {
@@ -122,6 +123,35 @@ export async function registerProfileRoutes(app: FastifyInstance) {
       return reply.code(400).send({
         error:
           error instanceof Error ? error.message : "Failed to complete onboarding",
+      });
+    }
+  });
+
+  app.post("/v1/profile/mark-journey-shown", async (request, reply) => {
+    try {
+      const { userId, sessionToken } = getAuthFromRequest(request);
+
+      if (!userId || !sessionToken) {
+        return reply.code(401).send({
+          success: false,
+          error: "Unauthorized",
+        });
+      }
+
+      const profile = await markUserJourneySelectionShown({
+        userId,
+        sessionToken,
+      });
+
+      return {
+        success: true,
+        message: "User journey selection marked as shown",
+        profile,
+      };
+    } catch (error) {
+      return reply.code(400).send({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to mark journey as shown",
       });
     }
   });

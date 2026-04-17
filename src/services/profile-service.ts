@@ -11,10 +11,11 @@ export type Profile = {
   date_of_birth: string | null;
   health_conditions: string[] | null;
   onboarding_completed: boolean;
+  user_journey_selection_shown: boolean;
 };
 
 const profileSelect =
-  "id, phone, display_name, gender, age, avatar_url, date_of_birth, health_conditions, onboarding_completed";
+  "id, phone, display_name, gender, age, avatar_url, date_of_birth, health_conditions, onboarding_completed, user_journey_selection_shown";
 
 function normalizePhone(phone: string): string {
   return phone.trim().replace(/[^\d+]/g, "");
@@ -334,4 +335,29 @@ export async function saveHealthConditions(input: {
 
   const profile = data as Profile;
   return await updateOnboardingStatus(authUser.id, profile);
+}
+
+export async function markUserJourneySelectionShown(input: SessionContext): Promise<Profile> {
+  const authUser = await assertValidSession(input);
+
+  if (!authUser.phone) {
+    throw new Error("User profile is incomplete.");
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone);
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ user_journey_selection_shown: true })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Mark user journey shown error:", error);
+    throw new Error(`Failed to update user journey status: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to update user journey status: No data returned");
+
+  return data as Profile;
 }
