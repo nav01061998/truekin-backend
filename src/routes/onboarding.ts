@@ -4,6 +4,7 @@ import {
   updateDisplayName,
   saveDateOfBirth,
   saveHealthConditions,
+  saveRoutineTimes,
 } from "../services/profile-service.js";
 
 function readHeader(value: unknown): string | undefined {
@@ -35,6 +36,12 @@ const saveHealthConditionsSchema = z.object({
   health_conditions: z
     .array(z.string().min(1).max(100))
     .min(1, "At least one health condition is required"),
+});
+
+const saveRoutineTimesSchema = z.object({
+  routine_times: z
+    .array(z.enum(["morning", "afternoon", "evening", "night"]))
+    .min(1, "At least one routine time is required"),
 });
 
 export async function registerOnboardingRoutes(app: FastifyInstance) {
@@ -137,6 +144,40 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
       return reply.code(400).send({
         error:
           error instanceof Error ? error.message : "Failed to save health conditions",
+      });
+    }
+  });
+
+  app.post("/onboarding/routine", async (request, reply) => {
+    try {
+      const body = saveRoutineTimesSchema.parse(request.body);
+      const { userId, sessionToken } = getAuthFromRequest(request);
+
+      if (!userId || !sessionToken) {
+        return reply.code(401).send({
+          error: "Unauthorized",
+        });
+      }
+
+      await saveRoutineTimes({
+        userId,
+        sessionToken,
+        routineTimes: body.routine_times,
+      });
+
+      return {
+        success: true,
+        onboarding_completed: true,
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: error.issues[0]?.message || "Invalid request body",
+        });
+      }
+
+      return reply.code(400).send({
+        error: error instanceof Error ? error.message : "Failed to save routine",
       });
     }
   });

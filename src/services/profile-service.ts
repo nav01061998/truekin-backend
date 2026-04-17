@@ -122,6 +122,45 @@ export async function completeOnboarding(input: SessionContext): Promise<Profile
   return data as Profile;
 }
 
+export async function saveRoutineTimes(input: {
+  userId: string;
+  sessionToken: string;
+  routineTimes: string[];
+}): Promise<boolean> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const routineTimes = input.routineTimes;
+
+  if (!Array.isArray(routineTimes) || routineTimes.length === 0) {
+    throw new Error("Routine times are required");
+  }
+
+  const validTimes = ["morning", "afternoon", "evening", "night"];
+  for (const time of routineTimes) {
+    if (!validTimes.includes(String(time).toLowerCase())) {
+      throw new Error(`Invalid routine time: ${time}`);
+    }
+  }
+
+  if (!authUser.phone) {
+    throw new Error("User profile is incomplete.");
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone);
+
+  const { error } = await supabaseAdmin
+    .from("profiles")
+    .update({ onboarding_completed: true })
+    .eq("id", authUser.id);
+
+  if (error) throw error;
+
+  return true;
+}
+
 export async function saveDateOfBirth(input: {
   userId: string;
   sessionToken: string;
