@@ -20,6 +20,33 @@ function normalizePhone(phone: string): string {
   return phone.trim().replace(/[^\d+]/g, "");
 }
 
+function isOnboardingComplete(profile: Profile): boolean {
+  return !!(
+    profile.display_name &&
+    profile.gender &&
+    profile.date_of_birth &&
+    profile.health_conditions !== null
+  );
+}
+
+async function updateOnboardingStatus(userId: string, profile: Profile): Promise<Profile> {
+  const shouldBeComplete = isOnboardingComplete(profile);
+
+  if (shouldBeComplete && !profile.onboarding_completed) {
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .update({ onboarding_completed: true })
+      .eq("id", userId)
+      .select(profileSelect)
+      .single();
+
+    if (error) throw error;
+    return data as Profile;
+  }
+
+  return profile;
+}
+
 async function ensureProfileRow(userId: string, phone: string): Promise<void> {
   const normalizedPhone = normalizePhone(phone);
 
@@ -100,7 +127,8 @@ export async function updateDisplayName(input: {
   }
   if (!data) throw new Error("Failed to update profile: No data returned");
 
-  return data as Profile;
+  const profile = data as Profile;
+  return await updateOnboardingStatus(authUser.id, profile);
 }
 
 export async function completeOnboarding(input: SessionContext): Promise<Profile> {
@@ -163,14 +191,15 @@ export async function saveGender(input: {
   }
   if (!data) throw new Error("Failed to save gender: No data returned");
 
-  return data as Profile;
+  const profile = data as Profile;
+  return await updateOnboardingStatus(authUser.id, profile);
 }
 
 export async function saveRoutineTimes(input: {
   userId: string;
   sessionToken: string;
   routineTimes: string[];
-}): Promise<boolean> {
+}): Promise<Profile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -195,14 +224,17 @@ export async function saveRoutineTimes(input: {
 
   await ensureProfileRow(authUser.id, authUser.phone);
 
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("profiles")
     .update({ onboarding_completed: true })
-    .eq("id", authUser.id);
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
 
   if (error) throw error;
+  if (!data) throw new Error("Failed to save routine times");
 
-  return true;
+  return data as Profile;
 }
 
 export async function saveDateOfBirth(input: {
@@ -249,7 +281,8 @@ export async function saveDateOfBirth(input: {
   }
   if (!data) throw new Error("Failed to save date of birth: No data returned");
 
-  return data as Profile;
+  const profile = data as Profile;
+  return await updateOnboardingStatus(authUser.id, profile);
 }
 
 export async function saveHealthConditions(input: {
@@ -299,5 +332,6 @@ export async function saveHealthConditions(input: {
   }
   if (!data) throw new Error("Failed to save health conditions: No data returned");
 
-  return data as Profile;
+  const profile = data as Profile;
+  return await updateOnboardingStatus(authUser.id, profile);
 }

@@ -198,7 +198,7 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
         });
       }
 
-      await saveRoutineTimes({
+      const profile = await saveRoutineTimes({
         userId,
         sessionToken,
         routineTimes: body.routine_times,
@@ -206,7 +206,7 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
 
       return {
         success: true,
-        onboarding_completed: true,
+        user: profile,
       };
     } catch (error) {
       if (error instanceof ZodError) {
