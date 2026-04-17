@@ -126,7 +126,6 @@ export async function saveDateOfBirth(input: {
   userId: string;
   sessionToken: string;
   dateOfBirth: string;
-  age: number;
 }): Promise<Profile> {
   const authUser = await assertValidSession({
     userId: input.userId,
@@ -145,12 +144,7 @@ export async function saveDateOfBirth(input: {
   }
 
   if (dateObj.getTime() > Date.now()) {
-    throw new Error("Date of birth cannot be in the future");
-  }
-
-  const age = input.age;
-  if (!Number.isInteger(age) || age < 1 || age > 150) {
-    throw new Error("Age must be a valid number between 1 and 150");
+    throw new Error("Future date not allowed");
   }
 
   if (!authUser.phone) {
@@ -161,7 +155,7 @@ export async function saveDateOfBirth(input: {
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .update({ date_of_birth: dateOfBirth, age })
+    .update({ date_of_birth: dateOfBirth })
     .eq("id", authUser.id)
     .select(profileSelect)
     .single();

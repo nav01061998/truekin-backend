@@ -29,7 +29,6 @@ const saveNameSchema = z.object({
 
 const saveDateOfBirthSchema = z.object({
   date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format. Use YYYY-MM-DD"),
-  age: z.number().int().positive().max(150, "Age must be between 1 and 150"),
 });
 
 const saveHealthConditionsSchema = z.object({
@@ -88,7 +87,6 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
         userId,
         sessionToken,
         dateOfBirth: body.date_of_birth,
-        age: body.age,
       });
 
       return {
