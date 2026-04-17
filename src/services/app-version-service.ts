@@ -1,3 +1,6 @@
+import { supabaseAdmin } from "../lib/supabase.js";
+import { z } from "zod";
+
 type PlatformType = "ios" | "android";
 
 type ChangeLogEntry = {
@@ -8,12 +11,15 @@ type ChangeLogEntry = {
 };
 
 type PlatformConfig = {
+  id: string;
+  platform: string;
   latestVersion: string;
   minimumSupportedVersion: string;
   updateUrl: string;
   releaseNotes: string;
   releaseDate: string;
   changeLog: ChangeLogEntry[];
+  isActive: boolean;
 };
 
 type VersionCheckRequest = {
@@ -40,39 +46,14 @@ type VersionCheckResponse = {
   skipUntilVersion?: string | null;
 };
 
-// Version configuration for each platform
-// This should be updated via admin panel in production
-const versionConfig: Record<PlatformType, PlatformConfig> = {
-  ios: {
-    latestVersion: "1.0.0",
-    minimumSupportedVersion: "1.0.0",
-    updateUrl: "https://apps.apple.com/app/truekin/id123456",
-    releaseNotes: "Initial release",
-    releaseDate: "2026-04-17",
-    changeLog: [
-      {
-        version: "1.0.0",
-        date: "2026-04-17",
-        features: ["User onboarding", "Medication tracking", "Health conditions"],
-        bugFixes: [],
-      },
-    ],
-  },
-  android: {
-    latestVersion: "1.0.0",
-    minimumSupportedVersion: "1.0.0",
-    updateUrl: "https://play.google.com/store/apps/details?id=com.careloop.truekin",
-    releaseNotes: "Initial release",
-    releaseDate: "2026-04-17",
-    changeLog: [
-      {
-        version: "1.0.0",
-        date: "2026-04-17",
-        features: ["User onboarding", "Medication tracking", "Health conditions"],
-        bugFixes: [],
-      },
-    ],
-  },
+type UpdateVersionRequest = {
+  platform: PlatformType;
+  latestVersion: string;
+  minimumSupportedVersion: string;
+  updateUrl: string;
+  releaseNotes: string;
+  releaseDate: string;
+  changeLog: ChangeLogEntry[];
 };
 
 function parseVersion(versionStr: string): number[] {
@@ -96,6 +77,31 @@ function compareVersions(current: string, target: string): number {
   return 0;
 }
 
+export async function getVersionConfig(platform: PlatformType): Promise<PlatformConfig> {
+  const { data, error } = await supabaseAdmin
+    .from("app_versions")
+    .select("id, platform, latest_version, minimum_supported_version, update_url, release_notes, release_date, changelog, is_active")
+    .eq("platform", platform)
+    .eq("is_active", true)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to fetch version config for ${platform}`);
+  }
+
+  return {
+    id: data.id,
+    platform: data.platform,
+    latestVersion: data.latest_version,
+    minimumSupportedVersion: data.minimum_supported_version,
+    updateUrl: data.update_url,
+    releaseNotes: data.release_notes,
+    releaseDate: data.release_date,
+    changeLog: data.changelog || [],
+    isActive: data.is_active,
+  };
+}
+
 export async function checkAppVersion(
   request: VersionCheckRequest
 ): Promise<VersionCheckResponse> {
@@ -105,7 +111,7 @@ export async function checkAppVersion(
     throw new Error("Invalid platform. Must be 'ios' or 'android'");
   }
 
-  const config = versionConfig[platform];
+  const config = await getVersionConfig(platform);
   const currentVersion = request.appVersion.trim();
   const latestVersion = config.latestVersion;
   const minimumVersion = config.minimumSupportedVersion;
@@ -156,13 +162,55 @@ export async function checkAppVersion(
   };
 }
 
-export function getVersionConfig(platform: PlatformType): PlatformConfig {
-  return versionConfig[platform];
-}
+export async function updateVersionConfig(
+  input: UpdateVersionRequest
+): Promise<PlatformConfig> {
+  const updateVersionSchema = z.object({
+    latestVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+    minimumSupportedVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+    updateUrl: z.string().url(),
+    releaseNotes: z.string().min(1),
+    releaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    changeLog: z.array(
+      z.object({
+        version: z.string(),
+        date: z.string(),
+        features: z.array(z.string()),
+        bugFixes: z.array(z.string()),
+      })
+    ),
+  });
 
-export function setVersionConfig(platform: PlatformType, config: Partial<PlatformConfig>): void {
-  if (!["ios", "android"].includes(platform)) {
-    throw new Error("Invalid platform");
+  const validated = updateVersionSchema.parse(input);
+
+  const { data, error } = await supabaseAdmin
+    .from("app_versions")
+    .update({
+      latest_version: validated.latestVersion,
+      minimum_supported_version: validated.minimumSupportedVersion,
+      update_url: validated.updateUrl,
+      release_notes: validated.releaseNotes,
+      release_date: validated.releaseDate,
+      changelog: validated.changeLog,
+    })
+    .eq("platform", input.platform)
+    .eq("is_active", true)
+    .select("id, platform, latest_version, minimum_supported_version, update_url, release_notes, release_date, changelog, is_active")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to update version config for ${input.platform}`);
   }
-  versionConfig[platform] = { ...versionConfig[platform], ...config };
+
+  return {
+    id: data.id,
+    platform: data.platform,
+    latestVersion: data.latest_version,
+    minimumSupportedVersion: data.minimum_supported_version,
+    updateUrl: data.update_url,
+    releaseNotes: data.release_notes,
+    releaseDate: data.release_date,
+    changeLog: data.changelog || [],
+    isActive: data.is_active,
+  };
 }
