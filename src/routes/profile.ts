@@ -105,23 +105,21 @@ export async function registerProfileRoutes(app: FastifyInstance) {
 
       if (!userId || !sessionToken) {
         return reply.code(401).send({
-          success: false,
           error: "Unauthorized",
         });
       }
 
-      const profile = await completeOnboarding({
+      await completeOnboarding({
         userId,
         sessionToken,
       });
 
       return {
         success: true,
-        profile,
+        message: "Onboarding completed",
       };
     } catch (error) {
       return reply.code(400).send({
-        success: false,
         error:
           error instanceof Error ? error.message : "Failed to complete onboarding",
       });

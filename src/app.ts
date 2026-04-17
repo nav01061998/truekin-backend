@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerAppRoutes } from "./routes/app.js";
 import { registerHomeRoutes } from "./routes/home.js";
 import { registerSupportRoutes } from "./routes/support.js";
 import { registerPrescriptionRoutes } from "./routes/prescriptions.js";
@@ -19,6 +20,7 @@ export async function buildApp() {
 
   await registerHealthRoutes(app);
   await registerAuthRoutes(app);
+  await registerAppRoutes(app);
   await registerOnboardingRoutes(app);
   await registerHomeRoutes(app);
   await registerSupportRoutes(app);
