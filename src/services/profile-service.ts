@@ -125,6 +125,47 @@ export async function completeOnboarding(input: SessionContext): Promise<Profile
   return data as Profile;
 }
 
+export async function saveGender(input: {
+  userId: string;
+  sessionToken: string;
+  gender: string;
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const genderInput = String(input.gender).trim().toLowerCase();
+
+  const validGenders = ["male", "female", "other", "prefer not to say"];
+  if (!validGenders.includes(genderInput)) {
+    throw new Error(
+      `Invalid gender value. Must be one of: ${validGenders.join(", ")}`
+    );
+  }
+
+  if (!authUser.phone) {
+    throw new Error("User profile is incomplete.");
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone);
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ gender: genderInput })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save gender error:", error);
+    throw new Error(`Failed to save gender: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save gender: No data returned");
+
+  return data as Profile;
+}
+
 export async function saveRoutineTimes(input: {
   userId: string;
   sessionToken: string;

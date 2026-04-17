@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
 import {
   updateDisplayName,
+  saveGender,
   saveDateOfBirth,
   saveHealthConditions,
   saveRoutineTimes,
@@ -26,6 +27,10 @@ function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
 
 const saveNameSchema = z.object({
   display_name: z.string().min(1, "Name is required").max(50, "Name is too long"),
+});
+
+const saveGenderSchema = z.object({
+  gender: z.enum(["Male", "Female", "Other", "Prefer not to say"]),
 });
 
 const saveDateOfBirthSchema = z.object({
@@ -75,6 +80,40 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
 
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "Failed to save name",
+      });
+    }
+  });
+
+  app.post("/onboarding/gender", async (request, reply) => {
+    try {
+      const body = saveGenderSchema.parse(request.body);
+      const { userId, sessionToken } = getAuthFromRequest(request);
+
+      if (!userId || !sessionToken) {
+        return reply.code(401).send({
+          error: "Unauthorized",
+        });
+      }
+
+      const profile = await saveGender({
+        userId,
+        sessionToken,
+        gender: body.gender,
+      });
+
+      return {
+        success: true,
+        user: profile,
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: error.issues[0]?.message || "Invalid request body",
+        });
+      }
+
+      return reply.code(400).send({
+        error: error instanceof Error ? error.message : "Failed to save gender",
       });
     }
   });
