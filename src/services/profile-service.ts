@@ -94,8 +94,11 @@ export async function updateDisplayName(input: {
     .select(profileSelect)
     .single();
 
-  if (error) throw error;
-  if (!data) throw new Error("Failed to update profile");
+  if (error) {
+    console.error("Update display name error:", error);
+    throw new Error(`Failed to update profile: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to update profile: No data returned");
 
   return data as Profile;
 }
@@ -199,8 +202,11 @@ export async function saveDateOfBirth(input: {
     .select(profileSelect)
     .single();
 
-  if (error) throw error;
-  if (!data) throw new Error("Failed to save date of birth");
+  if (error) {
+    console.error("Date of birth update error:", error);
+    throw new Error(`Failed to save date of birth: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save date of birth: No data returned");
 
   return data as Profile;
 }
@@ -246,8 +252,11 @@ export async function saveHealthConditions(input: {
     .select(profileSelect)
     .single();
 
-  if (error) throw error;
-  if (!data) throw new Error("Failed to save health conditions");
+  if (error) {
+    console.error("Save health conditions error:", error);
+    throw new Error(`Failed to save health conditions: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save health conditions: No data returned");
 
   return data as Profile;
 }
