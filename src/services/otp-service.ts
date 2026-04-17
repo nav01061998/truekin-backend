@@ -63,7 +63,6 @@ function isDuplicateUserError(error: unknown): boolean {
 
 async function findAuthUserByPhone(phone: string) {
   const target = normalizePhone(phone);
-  console.log(target)
   const perPage = 100;
   let page = 1;
 
@@ -72,7 +71,6 @@ async function findAuthUserByPhone(phone: string) {
       page,
       perPage,
     });
-    console.log(data)
     if (error) throw error;
 
     const match = data.users.find(
