@@ -4,12 +4,13 @@ Complete onboarding flow documentation with examples and test cases.
 
 ## Overview
 
-The onboarding flow consists of 4 steps that collect user information:
+The onboarding flow consists of 5 steps that collect user information:
 
 1. **Name** - User's display name
-2. **Date of Birth** - User's date of birth (ISO format)
-3. **Health Conditions** - User's health conditions
-4. **Routine** - User's preferred medicine routine times (marks onboarding complete)
+2. **Gender** - User's gender
+3. **Date of Birth** - User's date of birth (ISO format)
+4. **Health Conditions** - User's health conditions
+5. **Routine** - User's preferred medicine routine times (marks onboarding complete)
 
 ## Step 1: Save User Name
 
@@ -48,7 +49,52 @@ curl -X POST http://localhost:4000/onboarding/name \
 }
 ```
 
-## Step 2: Save Date of Birth
+## Step 2: Save Gender
+
+**Endpoint**: `POST /onboarding/gender`
+
+**Request**:
+```bash
+curl -X POST http://localhost:4000/onboarding/gender \
+  -H "x-user-id: 550e8400-e29b-41d4-a716-446655440000" \
+  -H "x-session-token: abc123xyz789" \
+  -H "Content-Type: application/json" \
+  -d '{"gender": "Male"}'
+```
+
+**Success Response (200)**:
+```json
+{
+  "success": true,
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "phone": "+1234567890",
+    "display_name": "Sarah",
+    "gender": "male",
+    "date_of_birth": null,
+    "health_conditions": null,
+    "avatar_url": null,
+    "onboarding_completed": false
+  }
+}
+```
+
+**Valid gender values**:
+- `Male`
+- `Female`
+- `Other`
+- `Prefer not to say`
+
+**Error Response (400)**:
+```json
+{
+  "error": "Invalid gender value. Must be one of: Male, Female, Other, Prefer not to say"
+}
+```
+
+---
+
+## Step 3: Save Date of Birth
 
 **Endpoint**: `POST /onboarding/date-of-birth`
 
@@ -213,21 +259,28 @@ POST /onboarding/name
 → Returns profile with onboarding_completed: false
 ```
 
-### 2. User selects date of birth
+### 2. User selects gender
+```bash
+POST /onboarding/gender
+{gender: "Female"}
+→ Returns profile with gender set, onboarding_completed: false
+```
+
+### 3. User selects date of birth
 ```bash
 POST /onboarding/date-of-birth
 {date_of_birth: "1985-06-15"}
 → Returns profile with date_of_birth set, onboarding_completed: false
 ```
 
-### 3. User selects health conditions
+### 4. User selects health conditions
 ```bash
 POST /onboarding/details
 {health_conditions: ["Diabetes", "Hypertension"]}
 → Returns profile with health_conditions set, onboarding_completed: false
 ```
 
-### 4. User selects routine (Final step)
+### 5. User selects routine (Final step)
 ```bash
 POST /onboarding/routine
 {routine_times: ["morning", "evening"]}
@@ -309,6 +362,13 @@ Returned for database or server issues:
 - [ ] Response includes all profile fields
 - [ ] Missing auth headers returns 401
 
+### Gender Endpoint
+- [ ] Save each valid gender value (Male, Female, Other, Prefer not to say)
+- [ ] Invalid gender validation
+- [ ] Response includes all profile fields
+- [ ] Gender is stored in lowercase in database
+- [ ] Missing auth headers returns 401
+
 ### Date of Birth Endpoint
 - [ ] Save valid date (YYYY-MM-DD format)
 - [ ] Invalid date format validation
@@ -373,17 +433,22 @@ const nameResponse = await postJson("/onboarding/name", {
   display_name: "Sarah"
 }, auth);
 
-// Step 2: Save date of birth
+// Step 2: Save gender
+const genderResponse = await postJson("/onboarding/gender", {
+  gender: "Female"
+}, auth);
+
+// Step 3: Save date of birth
 const dobResponse = await postJson("/onboarding/date-of-birth", {
   date_of_birth: "1985-06-15"
 }, auth);
 
-// Step 3: Save health conditions
+// Step 4: Save health conditions
 const healthResponse = await postJson("/onboarding/details", {
   health_conditions: ["Diabetes", "Hypertension"]
 }, auth);
 
-// Step 4: Save routine (completes onboarding)
+// Step 5: Save routine (completes onboarding)
 const routineResponse = await postJson("/onboarding/routine", {
   routine_times: ["morning", "evening"]
 }, auth);
