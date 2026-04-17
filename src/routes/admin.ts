@@ -1,6 +1,13 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 import { updateVersionConfig } from "../services/app-version-service.js";
+import {
+  requireAdminRole,
+  grantAdminRole,
+  revokeAdminRole,
+  listAdminUsers,
+} from "../services/admin-service.js";
+import type { SessionContext } from "../services/session-service.js";
 
 function readHeader(value: unknown): string | undefined {
   if (typeof value === "string") return value;
@@ -8,18 +15,15 @@ function readHeader(value: unknown): string | undefined {
   return undefined;
 }
 
-function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
-  return {
-    userId:
-      readHeader(request.headers["x-user-id"]) ||
-      readHeader(request.headers["X-User-Id"]),
-    sessionToken:
-      readHeader(request.headers["x-session-token"]) ||
-      readHeader(request.headers["X-Session-Token"]),
-    adminToken:
-      readHeader(request.headers["x-admin-token"]) ||
-      readHeader(request.headers["X-Admin-Token"]),
-  };
+function getSessionFromRequest(request: FastifyRequest): SessionContext {
+  const userId = readHeader(request.headers["x-user-id"]);
+  const sessionToken = readHeader(request.headers["x-session-token"]);
+
+  if (!userId || !sessionToken) {
+    throw new Error("Missing authentication headers");
+  }
+
+  return { userId, sessionToken };
 }
 
 const updateVersionSchema = z.object({
@@ -41,22 +45,20 @@ const updateVersionSchema = z.object({
   ),
 });
 
-// Simple admin token validation (in production, use proper auth)
-function validateAdminToken(token: string | undefined): boolean {
-  const expectedToken = process.env.ADMIN_TOKEN || "admin-secret-key";
-  return token === expectedToken;
-}
+const grantAdminSchema = z.object({
+  targetUserId: z.string().uuid("Invalid user ID format"),
+});
+
+const revokeAdminSchema = z.object({
+  targetUserId: z.string().uuid("Invalid user ID format"),
+});
 
 export async function registerAdminRoutes(app: FastifyInstance) {
+  // Update app version configuration
   app.post("/v1/admin/app-versions/update", async (request, reply) => {
     try {
-      const { adminToken } = getAuthFromRequest(request);
-
-      if (!validateAdminToken(adminToken)) {
-        return reply.code(401).send({
-          error: "Unauthorized. Invalid admin token.",
-        });
-      }
+      const session = getSessionFromRequest(request);
+      await requireAdminRole(session);
 
       const body = updateVersionSchema.parse(request.body);
 
@@ -94,22 +96,115 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         });
       }
 
-      return reply.code(400).send({
-        error: error instanceof Error ? error.message : "Failed to update version",
-      });
+      const message = error instanceof Error ? error.message : "Failed to update version";
+      if (message === "Admin access required. User does not have admin role.") {
+        return reply.code(403).send({ error: message });
+      }
+      if (message === "Unauthorized" || message === "Invalid or expired session") {
+        return reply.code(401).send({ error: message });
+      }
+
+      return reply.code(400).send({ error: message });
     }
   });
 
-  // Health check endpoint for admin operations
-  app.get("/v1/admin/health", async (request, reply) => {
-    const { adminToken } = getAuthFromRequest(request);
+  // Grant admin role to a user
+  app.post("/v1/admin/users/grant-admin", async (request, reply) => {
+    try {
+      const session = getSessionFromRequest(request);
+      const body = grantAdminSchema.parse(request.body);
 
-    if (!validateAdminToken(adminToken)) {
-      return reply.code(401).send({
-        error: "Unauthorized",
-      });
+      await grantAdminRole(session, body.targetUserId);
+
+      return {
+        success: true,
+        message: `Admin role granted to user ${body.targetUserId}`,
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: "Validation failed",
+          details: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        });
+      }
+
+      const message = error instanceof Error ? error.message : "Failed to grant admin role";
+      if (message === "Admin access required. User does not have admin role.") {
+        return reply.code(403).send({ error: message });
+      }
+      if (message === "Unauthorized" || message === "Invalid or expired session") {
+        return reply.code(401).send({ error: message });
+      }
+
+      return reply.code(400).send({ error: message });
     }
+  });
 
+  // Revoke admin role from a user
+  app.post("/v1/admin/users/revoke-admin", async (request, reply) => {
+    try {
+      const session = getSessionFromRequest(request);
+      const body = revokeAdminSchema.parse(request.body);
+
+      await revokeAdminRole(session, body.targetUserId);
+
+      return {
+        success: true,
+        message: `Admin role revoked from user ${body.targetUserId}`,
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: "Validation failed",
+          details: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        });
+      }
+
+      const message = error instanceof Error ? error.message : "Failed to revoke admin role";
+      if (message === "Admin access required. User does not have admin role.") {
+        return reply.code(403).send({ error: message });
+      }
+      if (message === "Unauthorized" || message === "Invalid or expired session") {
+        return reply.code(401).send({ error: message });
+      }
+
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  // List all admin users
+  app.get("/v1/admin/users/admins", async (request, reply) => {
+    try {
+      const session = getSessionFromRequest(request);
+      await requireAdminRole(session);
+
+      const admins = await listAdminUsers();
+
+      return {
+        success: true,
+        data: admins,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to list admin users";
+      if (message === "Admin access required. User does not have admin role.") {
+        return reply.code(403).send({ error: message });
+      }
+      if (message === "Unauthorized" || message === "Invalid or expired session") {
+        return reply.code(401).send({ error: message });
+      }
+
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  // Health check (no auth required)
+  app.get("/v1/admin/health", async (request, reply) => {
     return {
       success: true,
       status: "healthy",

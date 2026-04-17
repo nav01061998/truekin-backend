@@ -11,7 +11,6 @@ export type RequestContext = {
   userAgent?: string;
   ip?: string;
   authenticated: boolean;
-  adminMode: boolean;
 };
 
 // Rate limit config
@@ -31,11 +30,8 @@ const DEFAULT_RATE_LIMIT: RateLimitConfig = {
 // Public endpoints that don't require rate limiting
 const PUBLIC_ENDPOINTS = ["/v1/app/version-check", "/v1/health"];
 
-// Endpoints that need admin token
-const ADMIN_ENDPOINTS = ["/v1/admin"];
-
-// Endpoints that require session auth
-const PROTECTED_ENDPOINTS = ["/onboarding", "/v1/profile"];
+// Endpoints that require session auth (including admin endpoints)
+const PROTECTED_ENDPOINTS = ["/onboarding", "/v1/profile", "/v1/admin"];
 
 /**
  * Extract authentication headers from request
@@ -43,7 +39,6 @@ const PROTECTED_ENDPOINTS = ["/onboarding", "/v1/profile"];
 function extractAuth(request: FastifyRequest): {
   userId?: string;
   sessionToken?: string;
-  adminToken?: string;
 } {
   const readHeader = (key: string): string | undefined => {
     const value = request.headers[key.toLowerCase()];
@@ -55,7 +50,6 @@ function extractAuth(request: FastifyRequest): {
   return {
     userId: readHeader("x-user-id"),
     sessionToken: readHeader("x-session-token"),
-    adminToken: readHeader("x-admin-token"),
   };
 }
 
@@ -130,13 +124,6 @@ function isPublicEndpoint(path: string): boolean {
 }
 
 /**
- * Check if endpoint requires admin token
- */
-function isAdminEndpoint(path: string): boolean {
-  return ADMIN_ENDPOINTS.some((endpoint) => path.startsWith(endpoint));
-}
-
-/**
  * Check if endpoint requires session auth
  */
 function isProtectedEndpoint(path: string): boolean {
@@ -150,7 +137,7 @@ export async function setupGateway(app: FastifyInstance) {
   // Generate request ID and extract auth
   app.addHook("preHandler", async (request, reply) => {
     const requestId = randomUUID();
-    const { userId, sessionToken, adminToken } = extractAuth(request);
+    const { userId, sessionToken } = extractAuth(request);
 
     // Attach context to request
     (request as any).context = {
@@ -161,7 +148,6 @@ export async function setupGateway(app: FastifyInstance) {
       userAgent: request.headers["user-agent"],
       ip: request.ip,
       authenticated: !!userId && !!sessionToken,
-      adminMode: !!adminToken,
     } as RequestContext;
 
     // Log request
@@ -186,16 +172,6 @@ export async function setupGateway(app: FastifyInstance) {
       return reply.code(429).send({
         error: "Too many requests. Please try again later.",
       });
-    }
-
-    // Handle admin endpoints
-    if (isAdminEndpoint(request.url)) {
-      if (!adminToken) {
-        return reply.code(401).send({
-          error: "Admin token required",
-        });
-      }
-      return;
     }
 
     // Handle protected endpoints (require session auth)
