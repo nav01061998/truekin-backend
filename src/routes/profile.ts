@@ -6,6 +6,7 @@ import {
   updateDisplayName,
   markUserJourneySelectionShown,
 } from "../services/profile-service.js";
+import { deleteUserAccount, type DeletionReason } from "../services/account-deletion-service.js";
 
 function readHeader(value: unknown): string | undefined {
   if (typeof value === "string") return value;
@@ -26,6 +27,16 @@ function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
 
 const updateNameSchema = z.object({
   display_name: z.string().min(1).max(50),
+});
+
+const deleteAccountSchema = z.object({
+  reason: z.enum([
+    "dont_want_to_use",
+    "using_another_account",
+    "too_many_notifications",
+    "app_not_working",
+    "other",
+  ] as const),
 });
 
 export async function registerProfileRoutes(app: FastifyInstance) {
@@ -152,6 +163,57 @@ export async function registerProfileRoutes(app: FastifyInstance) {
       return reply.code(400).send({
         success: false,
         error: error instanceof Error ? error.message : "Failed to mark journey as shown",
+      });
+    }
+  });
+
+  app.post("/v1/profile/delete", async (request, reply) => {
+    try {
+      const body = deleteAccountSchema.parse(request.body);
+      const { userId, sessionToken } = getAuthFromRequest(request);
+
+      if (!userId || !sessionToken) {
+        return reply.code(401).send({
+          success: false,
+          error: "Unauthorized",
+        });
+      }
+
+      // Extract IP and user agent from request for audit log
+      const ipAddress = request.ip;
+      const userAgent = request.headers["user-agent"] as string | undefined;
+
+      // Delete account
+      await deleteUserAccount({
+        userId,
+        sessionToken,
+        reason: body.reason as DeletionReason,
+        ipAddress,
+        userAgent,
+      });
+
+      return {
+        success: true,
+        message: "Account successfully deleted",
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: "Invalid deletion reason",
+        });
+      }
+
+      const message = error instanceof Error ? error.message : "Account deletion failed";
+
+      // 401 for auth errors
+      if (message.includes("Unauthorized") || message.includes("Invalid or expired session")) {
+        return reply.code(401).send({
+          error: message,
+        });
+      }
+
+      return reply.code(400).send({
+        error: message,
       });
     }
   });

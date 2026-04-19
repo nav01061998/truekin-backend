@@ -8,7 +8,7 @@ export type Profile = {
   gender: string | null;
   age: number | null;
   avatar_url: string | null;
-  date_of_birth: string | null;
+  date_of_birth: Date | null;
   health_conditions: string[] | null;
   onboarding_completed: boolean;
   user_journey_selection_shown: boolean;
@@ -81,7 +81,6 @@ export async function getCurrentUserProfile(
 
   if (error) throw error;
   if (!data) throw new Error("Profile could not be loaded");
-
   return data as Profile;
 }
 
