@@ -128,7 +128,7 @@ All profile endpoints return this exact structure:
 {
   "appVersion": "1.0.0",
   "appName": "TrueKin",
-  "platform": "ios|android|web",
+  "platform": "ios|android",
   "buildNumber": "42",
   "osVersion": "17.4.1",
   "deviceModel": "iPhone 14 Pro"
@@ -144,9 +144,18 @@ All profile endpoints return this exact structure:
   "currentVersion": "1.0.0",
   "latestVersion": "1.0.0",
   "minimumSupportedVersion": "0.9.0",
-  "updateType": "none|optional|required"
+  "updateType": "none|optional|required",
+  "releaseNotes": "Initial release",
+  "updateUrl": "https://apps.apple.com/app/truekin/id123456",
+  "changelog": [{"version": "1.0.0", "date": "2026-04-17", "features": [...], "bugFixes": [...]}]
 }
 ```
+
+**Features**:
+- Reads latest and minimum versions from database (per platform)
+- Supports iOS and Android with separate version configurations
+- Returns release notes and changelog from database
+- Provides direct update URL for each platform
 
 ## Standard Headers for Authenticated Endpoints
 

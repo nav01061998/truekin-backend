@@ -77,12 +77,12 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         message: `Version updated for ${body.platform}`,
         data: {
           platform: result.platform,
-          latestVersion: result.latestVersion,
-          minimumSupportedVersion: result.minimumSupportedVersion,
-          updateUrl: result.updateUrl,
-          releaseNotes: result.releaseNotes,
-          releaseDate: result.releaseDate,
-          changeLog: result.changeLog,
+          latestVersion: result.latest_version,
+          minimumSupportedVersion: result.minimum_supported_version,
+          updateUrl: result.update_url,
+          releaseNotes: result.release_notes,
+          releaseDate: result.release_date,
+          changeLog: result.changelog,
         },
       };
     } catch (error) {

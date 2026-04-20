@@ -61,13 +61,18 @@ Created `src/routes/onboarding.ts` with 4 endpoints:
 ### 4. Version Check Endpoint
 - **Endpoint**: `POST /v1/app/version-check`
 - **Request**: {appVersion, appName, platform, buildNumber, osVersion, deviceModel}
-- **Response**: {success, updateAvailable, updateRequired, currentVersion, latestVersion, minimumSupportedVersion, updateType}
-- **File**: `src/routes/app.ts`
+- **Response**: {success, updateAvailable, updateRequired, currentVersion, latestVersion, minimumSupportedVersion, updateType, releaseNotes, updateUrl, changelog}
+- **Files**: 
+  - `src/routes/app.ts` - Version check endpoint
+  - `src/services/app-version-service.ts` - Version logic and database operations
 - **Features**: 
-  - Accepts platform info (iOS, Android, Web)
-  - Compares versions for update availability
+  - Reads version info from Supabase app_versions table
+  - Separate configurations for iOS and Android platforms
+  - Semantic version comparison
   - Returns required vs optional update status
   - Enforces minimum supported version
+  - Includes release notes and changelog from database
+  - Provides platform-specific update URL
 
 ### 5. Session Management Updates
 - **File**: `src/services/otp-service.ts`
@@ -100,6 +105,12 @@ Created `src/routes/onboarding.ts` with 4 endpoints:
   - Updated to use `createSession()`
   - Updated response type to remove `bypass` field
   - Updated `profileSelect` constant
+
+- `src/services/app-version-service.ts` (NEW)
+  - `getAppVersion()` - Fetch active version from database by platform
+  - `compareVersions()` - Semantic version comparison
+  - `getUpdateType()` - Determine update type (none/optional/required)
+  - `updateVersionConfig()` - Update version info in database (admin endpoint)
 
 ### Route Files
 - `src/routes/auth.ts`
