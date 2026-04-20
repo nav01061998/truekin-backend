@@ -106,7 +106,6 @@ export async function verifyOtp(data: {
     let userId: string;
     let isNewUser = false;
     let email = existingAuthUser?.email;
-
     if (existingAuthUser) {
       userId = existingAuthUser.id;
       // Update existing user
@@ -141,13 +140,16 @@ export async function verifyOtp(data: {
       email = newUser.user.email || aliasEmail;
       isNewUser = true;
     }
-
     // Check if profile exists
-    const { data: existingProfile } = await supabaseAdmin
+    const { data: existingProfile, error: profileFetchError } = await supabaseAdmin
       .from("profiles")
       .select(profileSelect)
       .eq("id", userId)
       .single();
+
+    if (profileFetchError) {
+      console.error("Error fetching profile for user:", userId, profileFetchError);
+    }
 
     // Create profile if it doesn't exist
     if (!existingProfile) {
@@ -214,11 +216,15 @@ export async function verifyOtp(data: {
     .eq("id", otpSession.id);
 
   // Check if user exists
-  const { data: existingUser } = await supabaseAdmin
+  const { data: existingUser, error: userFetchError } = await supabaseAdmin
     .from("profiles")
     .select(profileSelect)
     .eq("phone", normalizedPhone)
     .single();
+
+  if (userFetchError) {
+    console.error("Error fetching user profile for phone:", normalizedPhone, userFetchError);
+  }
 
   const isNewUser = !existingUser;
 
