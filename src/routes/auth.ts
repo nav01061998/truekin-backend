@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sendOtp, verifyOtp } from "../services/otp-service.js";
 import { calculateCompletionPercentage } from "../services/profile-service.js";
+import { createSession } from "../services/session-service.js";
 
 const phoneSchema = z.object({
   phone: z.string().min(4),
@@ -30,12 +31,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const body = verifySchema.parse(request.body);
       const result = await verifyOtp(body);
 
+      // Create a session for the user
+      const sessionToken = await createSession(result.userId);
+
       // Calculate completion percentage
       const completionPercentage = result.user ? calculateCompletionPercentage(result.user) : 0;
-
       return {
         error: null,
-        isNewUser: result.isNewUser,
+        isNewUser: result.is_new_user,
         onboardingCompleted: result.user?.onboarding_completed ?? false,
         userProfile: result.user ? {
           id: result.user.id,
@@ -49,6 +52,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           user_journey_selection_shown: result.user.user_journey_selection_shown === true,
           completion_percentage: completionPercentage,
         } : undefined,
+        sessionToken,
+        userId: result.userId,
       };
     } catch (error) {
       return reply.code(400).send({
