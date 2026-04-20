@@ -48,8 +48,27 @@ All profile endpoints return this exact structure:
 ## Profile Management
 
 ### GET /v1/profile/me
+**Status**: ⚠️ CRITICAL - Session validation & state restoration
 **Headers**: `x-user-id`, `x-session-token`
-**Response**: 17-field UserProfile (direct, not wrapped)
+**Response (200)**: 17-field UserProfile (direct, not wrapped)
+
+**Error Responses**:
+- **401** - Invalid or expired session:
+  ```json
+  { "error": "Invalid or expired session", "message": "Please login again" }
+  ```
+- **403** - Session revoked:
+  ```json
+  { "error": "Session revoked", "message": "Your session is no longer valid" }
+  ```
+- **404** - User/Profile not found:
+  ```json
+  { "error": "Profile not found", "message": "..." }
+  ```
+- **500** - Server error (client should keep cached data):
+  ```json
+  { "error": "Server error", "message": "Please try again later" }
+  ```
 
 ### POST /v1/profile/update
 **Headers**: `x-user-id`, `x-session-token`

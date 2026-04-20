@@ -51,9 +51,11 @@ export async function registerProfileRoutes(app: FastifyInstance) {
       const { userId, sessionToken } = getAuthFromRequest(request);
       if (!userId || !sessionToken) {
         return reply.code(401).send({
-          error: "Unauthorized",
+          error: "Invalid or expired session",
+          message: "Please login again",
         });
       }
+
       const profile = await getCurrentUserProfile({
         userId,
         sessionToken,
@@ -63,8 +65,40 @@ export async function registerProfileRoutes(app: FastifyInstance) {
       return profile;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load profile";
-      return reply.code(401).send({
-        error: message,
+
+      // Handle different error types
+      if (message.includes("Session revoked")) {
+        return reply.code(403).send({
+          error: "Session revoked",
+          message: "Your session is no longer valid",
+        });
+      }
+
+      if (message.includes("Session expired") || message.includes("Unauthorized")) {
+        return reply.code(401).send({
+          error: "Invalid or expired session",
+          message: "Please login again",
+        });
+      }
+
+      if (message.includes("User profile is incomplete")) {
+        return reply.code(404).send({
+          error: "User profile not found",
+          message: "Profile data is incomplete",
+        });
+      }
+
+      if (message.includes("Profile could not be loaded")) {
+        return reply.code(404).send({
+          error: "Profile not found",
+          message: message,
+        });
+      }
+
+      // Server error (keep cached data on client)
+      return reply.code(500).send({
+        error: "Server error",
+        message: "Please try again later",
       });
     }
   });
