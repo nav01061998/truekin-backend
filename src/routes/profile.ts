@@ -46,6 +46,12 @@ const deleteAccountSchema = z.object({
 });
 
 export async function registerProfileRoutes(app: FastifyInstance) {
+  // Test endpoint to verify routes are loaded
+  app.get("/v1/profile/test", async (request, reply) => {
+    console.log("[TEST] Profile routes loaded successfully");
+    return { success: true, message: "Profile routes are working" };
+  });
+
   app.get("/v1/profile/me", async (request, reply) => {
     try {
       const { userId, sessionToken } = getAuthFromRequest(request);
