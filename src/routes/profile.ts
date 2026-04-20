@@ -49,6 +49,11 @@ export async function registerProfileRoutes(app: FastifyInstance) {
   app.get("/v1/profile/me", async (request, reply) => {
     try {
       const { userId, sessionToken } = getAuthFromRequest(request);
+      console.log("[GET /v1/profile/me] Auth headers:", {
+        userId: userId ? "present" : "missing",
+        sessionToken: sessionToken ? "present" : "missing",
+      });
+
       if (!userId || !sessionToken) {
         return reply.code(401).send({
           error: "Invalid or expired session",
@@ -65,6 +70,7 @@ export async function registerProfileRoutes(app: FastifyInstance) {
       return profile;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load profile";
+      console.error("[GET /v1/profile/me] Error:", message);
 
       // Handle different error types
       if (message.includes("Session revoked")) {

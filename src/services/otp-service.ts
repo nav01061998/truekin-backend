@@ -170,11 +170,18 @@ export async function verifyOtp(data: {
     // Create session and get token
     const sessionToken = await createSession(userId);
 
+    // Fetch the full profile to ensure we have all fields
+    const { data: fullProfile } = await supabaseAdmin
+      .from("profiles")
+      .select(profileSelect)
+      .eq("id", userId)
+      .single();
+
     return {
       userId,
       is_new_user,
       token_hash: sessionToken,
-      user: existingProfile || { phone: normalizedPhone, email },
+      user: fullProfile || existingProfile || { id: userId, phone: normalizedPhone, email },
     };
   }
 
@@ -250,10 +257,17 @@ export async function verifyOtp(data: {
   // Create session and get token
   const sessionToken = await createSession(userId);
 
+  // Fetch the full profile to ensure we have all fields
+  const { data: fullProfile } = await supabaseAdmin
+    .from("profiles")
+    .select(profileSelect)
+    .eq("id", userId)
+    .single();
+
   return {
     userId,
     is_new_user,
     token_hash: sessionToken,
-    user: existingUser || { phone: normalizedPhone },
+    user: fullProfile || existingUser || { id: userId, phone: normalizedPhone },
   };
 }

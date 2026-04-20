@@ -7,6 +7,7 @@ export type SessionContext = {
 };
 
 function normalize(value: string) {
+  if (!value || typeof value !== 'string') return '';
   return value.trim();
 }
 
@@ -43,6 +44,11 @@ export async function assertValidSession(input: SessionContext) {
   const userId = normalize(input.userId);
   const sessionToken = normalize(input.sessionToken);
 
+  console.log("[assertValidSession] Validating:", {
+    userId: userId ? "present" : "missing",
+    sessionToken: sessionToken ? `present (length: ${sessionToken.length})` : "missing",
+  });
+
   if (!userId || !sessionToken) {
     throw new Error("Unauthorized");
   }
@@ -51,11 +57,16 @@ export async function assertValidSession(input: SessionContext) {
     await supabaseAdmin.auth.admin.getUserById(userId);
 
   if (authError || !authUserResponse?.user) {
+    console.error("[assertValidSession] Auth user not found:", authError);
     throw new Error("Unauthorized");
   }
 
+  console.log("[assertValidSession] Auth user found:", userId);
+
   // Hash the session token for comparison
   const sessionTokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
+
+  console.log("[assertValidSession] Looking for session with hash:", sessionTokenHash);
 
   const { data: sessionRow, error: sessionError } = await supabaseAdmin
     .from("auth_sessions")
@@ -64,11 +75,17 @@ export async function assertValidSession(input: SessionContext) {
     .eq("session_token_hash", sessionTokenHash)
     .maybeSingle();
 
-  if (sessionError) throw sessionError;
+  if (sessionError) {
+    console.error("[assertValidSession] Session lookup error:", sessionError);
+    throw sessionError;
+  }
 
   if (!sessionRow) {
+    console.error("[assertValidSession] No session row found for user:", userId);
     throw new Error("Session expired. Please sign in again.");
   }
+
+  console.log("[assertValidSession] Session found, checking status");
 
   if (sessionRow.revoked_at) {
     throw new Error("Session revoked. Please sign in again.");
@@ -78,5 +95,6 @@ export async function assertValidSession(input: SessionContext) {
     throw new Error("Session expired. Please sign in again.");
   }
 
+  console.log("[assertValidSession] Session valid for user:", userId);
   return authUserResponse.user;
 }
