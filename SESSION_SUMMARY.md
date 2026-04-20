@@ -113,7 +113,7 @@ This session focused on fixing critical authentication, session management, and 
 **POST /v1/auth/otp/verify**
 ```
 OLD Response: { success, user_id, token_hash, bypass, user, is_new_user }
-NEW Response: { error, isNewUser, onboardingCompleted, userProfile, sessionToken, userId }
+NEW Response: { error, is_new_user, onboardingCompleted, userProfile, sessionToken, userId }
 ```
 
 ### Profile Endpoints

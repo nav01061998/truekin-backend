@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 import { sendEmailOTP, sendPhoneOTP, verifyEmailOTP, verifyPhoneOTP } from "../services/profile-otp-service.js";
-import { calculateCompletionPercentage } from "../services/profile-service.js";
 import { logAuditEvent } from "../services/audit-service.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 
@@ -40,8 +39,9 @@ const verifyPhoneOTPSchema = z.object({
   otp: z.string().min(4).max(6),
 });
 
+// Select exactly 17 fields as per spec
 const profileSelect =
-  "id, phone, email, email_verified, display_name, gender, age, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown, completion_percentage, created_at, updated_at";
+  "id, phone, email, email_verified, display_name, gender, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown";
 
 export async function registerOTPRoutes(app: FastifyInstance) {
   // Send Email OTP
@@ -134,13 +134,10 @@ export async function registerOTPRoutes(app: FastifyInstance) {
         throw new Error("Failed to fetch updated profile");
       }
 
-      const profileData = profile as any;
-      profileData.completion_percentage = calculateCompletionPercentage(profileData);
-
       return {
         success: true,
         message: "Email verified successfully",
-        profile: profileData,
+        profile,
       };
     } catch (error) {
       // Log failed attempt if not already logged
@@ -275,13 +272,10 @@ export async function registerOTPRoutes(app: FastifyInstance) {
         throw new Error("Failed to fetch updated profile");
       }
 
-      const profileData = profile as any;
-      profileData.completion_percentage = calculateCompletionPercentage(profileData);
-
       return {
         success: true,
         message: "Phone number updated successfully",
-        profile: profileData,
+        profile,
       };
     } catch (error) {
       // Log failed attempt if not already logged

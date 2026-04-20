@@ -6,6 +6,7 @@ import {
   updateDisplayName,
   markUserJourneySelectionShown,
   saveAddress,
+  type UserProfile,
 } from "../services/profile-service.js";
 import { deleteUserAccount, type DeletionReason } from "../services/account-deletion-service.js";
 
@@ -48,28 +49,22 @@ export async function registerProfileRoutes(app: FastifyInstance) {
   app.get("/v1/profile/me", async (request, reply) => {
     try {
       const { userId, sessionToken } = getAuthFromRequest(request);
-
       if (!userId || !sessionToken) {
         return reply.code(401).send({
-          success: false,
           error: "Unauthorized",
         });
       }
-
       const profile = await getCurrentUserProfile({
         userId,
         sessionToken,
       });
 
-      return {
-        success: true,
-        profile,
-      };
+      // Return the 17-field profile directly (not wrapped)
+      return profile;
     } catch (error) {
-      return reply.code(400).send({
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Failed to load profile",
+      const message = error instanceof Error ? error.message : "Failed to load profile";
+      return reply.code(401).send({
+        error: message,
       });
     }
   });
@@ -81,7 +76,6 @@ export async function registerProfileRoutes(app: FastifyInstance) {
 
       if (!userId || !sessionToken) {
         return reply.code(401).send({
-          success: false,
           error: "Unauthorized",
         });
       }
@@ -92,26 +86,17 @@ export async function registerProfileRoutes(app: FastifyInstance) {
         displayName: body.display_name,
       });
 
-      return {
-        success: true,
-        profile,
-      };
+      // Return the 17-field profile directly
+      return profile;
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({
-          success: false,
           error: "Invalid request body",
-          issues: error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            message: issue.message,
-          })),
         });
       }
 
       return reply.code(400).send({
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Failed to update profile",
+        error: error instanceof Error ? error.message : "Failed to update profile",
       });
     }
   });
@@ -123,7 +108,6 @@ export async function registerProfileRoutes(app: FastifyInstance) {
 
       if (!userId || !sessionToken) {
         return reply.code(401).send({
-          success: false,
           error: "Unauthorized",
         });
       }
@@ -134,26 +118,17 @@ export async function registerProfileRoutes(app: FastifyInstance) {
         address: body.address,
       });
 
-      return {
-        success: true,
-        profile,
-      };
+      // Return the 17-field profile directly
+      return profile;
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({
-          success: false,
           error: "Invalid request body",
-          issues: error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            message: issue.message,
-          })),
         });
       }
 
       return reply.code(400).send({
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Failed to update address",
+        error: error instanceof Error ? error.message : "Failed to update address",
       });
     }
   });

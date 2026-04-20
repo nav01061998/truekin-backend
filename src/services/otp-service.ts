@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../lib/supabase.js";
+import { createSession } from "./session-service.js";
 import crypto from "crypto";
 
 /**
@@ -16,9 +17,9 @@ import crypto from "crypto";
  */
 const BYPASS_PHONE = "918547032018";
 
-// Select profile columns - includes extended fields that may be null if migrations haven't run
+// Select profile columns - exactly 17 fields as per spec
 const profileSelect =
-  "id, phone, email, email_verified, display_name, gender, age, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown, completion_percentage, created_at, updated_at";
+  "id, phone, email, email_verified, display_name, gender, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown";
 
 function hashOTP(otp: string): string {
   return crypto.createHash("sha256").update(otp).digest("hex");
@@ -86,9 +87,8 @@ export async function verifyOtp(data: {
   otp: string;
 }): Promise<{
   userId: string;
-  isNewUser: boolean;
-  tokenHash: string;
-  bypass: boolean;
+  is_new_user: boolean;
+  token_hash: string;
   user: any;
 }> {
   const normalizedPhone = data.phone.replace(/\D/g, "");
@@ -105,7 +105,7 @@ export async function verifyOtp(data: {
     const existingAuthUser = authUsers?.users?.find((u: any) => u.phone === normalizedPhone);
 
     let userId: string;
-    let isNewUser = false;
+    let is_new_user = false;
     let email = existingAuthUser?.email;
     if (existingAuthUser) {
       userId = existingAuthUser.id;
@@ -139,7 +139,7 @@ export async function verifyOtp(data: {
 
       userId = newUser.user.id;
       email = newUser.user.email || aliasEmail;
-      isNewUser = true;
+      is_new_user = true;
     }
     // Check if profile exists
     const { data: existingProfile, error: profileFetchError } = await supabaseAdmin
@@ -167,14 +167,13 @@ export async function verifyOtp(data: {
       }
     }
 
-    // Generate session token
-    const tokenHash = crypto.randomBytes(32).toString("hex");
+    // Create session and get token
+    const sessionToken = await createSession(userId);
 
     return {
       userId,
-      isNewUser,
-      tokenHash,
-      bypass: true,
+      is_new_user,
+      token_hash: sessionToken,
       user: existingProfile || { phone: normalizedPhone, email },
     };
   }
@@ -227,14 +226,16 @@ export async function verifyOtp(data: {
     console.error("Error fetching user profile for phone:", normalizedPhone, userFetchError);
   }
 
-  const isNewUser = !existingUser;
+  const is_new_user = !existingUser;
+  let userId: string;
 
   // For new users, create profile
-  if (isNewUser) {
+  if (is_new_user) {
+    userId = crypto.randomUUID();
     const { error: createError } = await supabaseAdmin
       .from("profiles")
       .insert({
-        id: crypto.randomUUID(),
+        id: userId,
         phone: normalizedPhone,
       });
 
@@ -242,16 +243,17 @@ export async function verifyOtp(data: {
       console.error("Error creating profile:", createError);
       throw new Error("Failed to create user profile");
     }
+  } else {
+    userId = existingUser.id;
   }
 
-  // Generate session token
-  const tokenHash = crypto.randomBytes(32).toString("hex");
+  // Create session and get token
+  const sessionToken = await createSession(userId);
 
   return {
-    userId: existingUser?.id || crypto.randomUUID(),
-    isNewUser,
-    tokenHash,
-    bypass: false,
+    userId,
+    is_new_user,
+    token_hash: sessionToken,
     user: existingUser || { phone: normalizedPhone },
   };
 }

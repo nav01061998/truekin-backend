@@ -1,8 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sendOtp, verifyOtp } from "../services/otp-service.js";
-import { calculateCompletionPercentage } from "../services/profile-service.js";
-import { createSession } from "../services/session-service.js";
+import { type UserProfile } from "../services/profile-service.js";
 
 const phoneSchema = z.object({
   phone: z.string().min(4),
@@ -31,17 +30,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const body = verifySchema.parse(request.body);
       const result = await verifyOtp(body);
 
-      // Calculate completion percentage
-      const completionPercentage = result.user ? calculateCompletionPercentage(result.user) : 0;
-
-      // Create a session for the user
-      const sessionToken = await createSession(result.userId);
-
-      return {
-        error: null,
-        isNewUser: result.is_new_user,
-        onboardingCompleted: result.user?.onboarding_completed ?? false,
-        userProfile: result.user ? {
+      // Convert user to 17-field UserProfile format
+      let userProfile: UserProfile | undefined;
+      if (result.user) {
+        userProfile = {
           id: result.user.id,
           phone: result.user.phone,
           display_name: result.user.display_name || null,
@@ -51,10 +43,23 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           avatar_url: result.user.avatar_url || null,
           onboarding_completed: result.user.onboarding_completed === true,
           user_journey_selection_shown: result.user.user_journey_selection_shown === true,
-          completion_percentage: completionPercentage,
-        } : undefined,
-        sessionToken,
-        userId: result.userId,
+          email: result.user.email || null,
+          email_verified: result.user.email_verified === true,
+          address: result.user.address || null,
+          blood_group: result.user.blood_group || null,
+          height: result.user.height || null,
+          weight: result.user.weight || null,
+          food_allergies: result.user.food_allergies || null,
+          medicine_allergies: result.user.medicine_allergies || null,
+        };
+      }
+
+      return {
+        success: true,
+        user_id: result.userId,
+        is_new_user: result.is_new_user,
+        token_hash: result.token_hash,
+        user: userProfile,
       };
     } catch (error) {
       return reply.code(400).send({

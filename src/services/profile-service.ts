@@ -1,35 +1,65 @@
 import { supabaseAdmin } from "../lib/supabase.js";
 import { assertValidSession, type SessionContext } from "./session-service.js";
 
-export type Profile = {
+// UserProfile is the exact 17-field type returned in all API responses
+export type UserProfile = {
   id: string;
   phone: string;
-  email: string | null;
-  email_verified: boolean;
   display_name: string | null;
   gender: string | null;
-  age: number | null;
-  avatar_url: string | null;
   date_of_birth: string | null;
-  address: string | null;
   health_conditions: string[] | null;
+  avatar_url: string | null;
+  onboarding_completed: boolean;
+  user_journey_selection_shown: boolean;
+  email: string | null;
+  email_verified: boolean;
+  address: string | null;
   blood_group: string | null;
   height: number | null;
   weight: number | null;
   food_allergies: string[] | null;
   medicine_allergies: string[] | null;
-  onboarding_completed: boolean;
-  user_journey_selection_shown: boolean;
-  completion_percentage: number;
-  created_at: string;
-  updated_at: string;
+};
+
+// Internal type for database operations (includes fields not sent to frontend)
+type ProfileInternal = UserProfile & {
+  age?: number | null;
+  completion_percentage?: number;
+  created_at?: string;
+  updated_at?: string;
 };
 
 const profileSelect =
-  "id, phone, email, email_verified, display_name, gender, age, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown, completion_percentage, created_at, updated_at";
+  "id, phone, email, email_verified, display_name, gender, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown";
 
 function normalizePhone(phone: string): string {
   return phone.trim().replace(/[^\d+]/g, "");
+}
+
+/**
+ * Convert internal profile to UserProfile (17 fields only)
+ */
+function toUserProfile(profile: any): UserProfile {
+  return {
+    id: profile.id,
+    phone: profile.phone,
+    display_name: profile.display_name || null,
+    gender: profile.gender || null,
+    date_of_birth: profile.date_of_birth || null,
+    health_conditions: profile.health_conditions || null,
+    avatar_url: profile.avatar_url || null,
+    onboarding_completed: profile.onboarding_completed === true,
+    user_journey_selection_shown: profile.user_journey_selection_shown === true,
+    email: profile.email || null,
+    email_verified: profile.email_verified === true,
+    address: profile.address || null,
+    blood_group: profile.blood_group || null,
+    height: profile.height || null,
+    weight: profile.weight || null,
+    food_allergies: profile.food_allergies || null,
+    medicine_allergies: profile.medicine_allergies || null,
+  };
 }
 
 /**
@@ -75,7 +105,7 @@ export function calculateCompletionPercentage(profile: any): number {
   return Math.min(100, Math.max(0, percentage));
 }
 
-function isOnboardingComplete(profile: Profile): boolean {
+function isOnboardingComplete(profile: UserProfile): boolean {
   return !!(
     profile.display_name &&
     profile.gender &&
@@ -84,7 +114,7 @@ function isOnboardingComplete(profile: Profile): boolean {
   );
 }
 
-async function updateOnboardingStatus(userId: string, profile: Profile): Promise<Profile> {
+async function updateOnboardingStatus(userId: string, profile: UserProfile): Promise<UserProfile> {
   const shouldBeComplete = isOnboardingComplete(profile);
 
   if (shouldBeComplete && !profile.onboarding_completed) {
@@ -96,9 +126,7 @@ async function updateOnboardingStatus(userId: string, profile: Profile): Promise
       .single();
 
     if (error) throw error;
-    const updatedProfile = data as Profile;
-    updatedProfile.completion_percentage = calculateCompletionPercentage(updatedProfile);
-    return updatedProfile;
+    return toUserProfile(data);
   }
 
   return profile;
@@ -120,7 +148,7 @@ async function ensureProfileRow(userId: string, phone: string): Promise<void> {
 
 export async function getCurrentUserProfile(
   input: SessionContext
-): Promise<Profile> {
+): Promise<UserProfile> {
   const authUser = await assertValidSession(input);
 
   if (!authUser.phone) {
@@ -138,16 +166,14 @@ export async function getCurrentUserProfile(
   if (error) throw error;
   if (!data) throw new Error("Profile could not be loaded");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 export async function updateDisplayName(input: {
   userId: string;
   sessionToken: string;
   displayName: string;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -186,12 +212,11 @@ export async function updateDisplayName(input: {
   }
   if (!data) throw new Error("Failed to update profile: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
+  const profile = toUserProfile(data);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
-export async function completeOnboarding(input: SessionContext): Promise<Profile> {
+export async function completeOnboarding(input: SessionContext): Promise<UserProfile> {
   const authUser = await assertValidSession(input);
 
   if (!authUser.phone) {
@@ -210,16 +235,14 @@ export async function completeOnboarding(input: SessionContext): Promise<Profile
   if (error) throw error;
   if (!data) throw new Error("Failed to complete onboarding");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 export async function saveGender(input: {
   userId: string;
   sessionToken: string;
   gender: string;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -253,8 +276,7 @@ export async function saveGender(input: {
   }
   if (!data) throw new Error("Failed to save gender: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
+  const profile = toUserProfile(data);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
@@ -262,7 +284,7 @@ export async function saveRoutineTimes(input: {
   userId: string;
   sessionToken: string;
   routineTimes: string[];
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -297,16 +319,14 @@ export async function saveRoutineTimes(input: {
   if (error) throw error;
   if (!data) throw new Error("Failed to save routine times");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 export async function saveDateOfBirth(input: {
   userId: string;
   sessionToken: string;
   dateOfBirth: string;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -346,8 +366,7 @@ export async function saveDateOfBirth(input: {
   }
   if (!data) throw new Error("Failed to save date of birth: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
+  const profile = toUserProfile(data);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
@@ -355,7 +374,7 @@ export async function saveHealthConditions(input: {
   userId: string;
   sessionToken: string;
   healthConditions: string[];
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -398,12 +417,11 @@ export async function saveHealthConditions(input: {
   }
   if (!data) throw new Error("Failed to save health conditions: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
+  const profile = toUserProfile(data);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
-export async function markUserJourneySelectionShown(input: SessionContext): Promise<Profile> {
+export async function markUserJourneySelectionShown(input: SessionContext): Promise<UserProfile> {
   const authUser = await assertValidSession(input);
 
   if (!authUser.phone) {
@@ -425,9 +443,7 @@ export async function markUserJourneySelectionShown(input: SessionContext): Prom
   }
   if (!data) throw new Error("Failed to update user journey status: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 /**
@@ -437,7 +453,7 @@ export async function saveAddress(input: {
   userId: string;
   sessionToken: string;
   address: string;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -468,9 +484,7 @@ export async function saveAddress(input: {
   }
   if (!data) throw new Error("Failed to save address: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 /**
@@ -480,7 +494,7 @@ export async function saveBloodGroup(input: {
   userId: string;
   sessionToken: string;
   bloodGroup: string;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -508,9 +522,7 @@ export async function saveBloodGroup(input: {
   }
   if (!data) throw new Error("Failed to save blood group: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 /**
@@ -520,7 +532,7 @@ export async function saveHeight(input: {
   userId: string;
   sessionToken: string;
   height: number;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -547,9 +559,7 @@ export async function saveHeight(input: {
   }
   if (!data) throw new Error("Failed to save height: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 /**
@@ -559,7 +569,7 @@ export async function saveWeight(input: {
   userId: string;
   sessionToken: string;
   weight: number;
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -586,9 +596,7 @@ export async function saveWeight(input: {
   }
   if (!data) throw new Error("Failed to save weight: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 /**
@@ -598,7 +606,7 @@ export async function saveFoodAllergies(input: {
   userId: string;
   sessionToken: string;
   foodAllergies: string[];
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -639,9 +647,7 @@ export async function saveFoodAllergies(input: {
   }
   if (!data) throw new Error("Failed to save food allergies: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }
 
 /**
@@ -651,7 +657,7 @@ export async function saveMedicineAllergies(input: {
   userId: string;
   sessionToken: string;
   medicineAllergies: string[];
-}): Promise<Profile> {
+}): Promise<UserProfile> {
   const authUser = await assertValidSession({
     userId: input.userId,
     sessionToken: input.sessionToken,
@@ -692,7 +698,5 @@ export async function saveMedicineAllergies(input: {
   }
   if (!data) throw new Error("Failed to save medicine allergies: No data returned");
 
-  const profile = data as Profile;
-  profile.completion_percentage = calculateCompletionPercentage(profile);
-  return profile;
+  return toUserProfile(data);
 }

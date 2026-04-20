@@ -72,7 +72,7 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
       // Also store in Firestore for real-time updates
       try {
         const firestore = getFirebaseFirestore();
-        const tokenHash = Buffer.from(body.device_token)
+        const token_hash = Buffer.from(body.device_token)
           .toString("base64")
           .substring(0, 50);
 
@@ -80,7 +80,7 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
           .collection("users")
           .doc(userId)
           .collection("devices")
-          .doc(tokenHash)
+          .doc(token_hash)
           .set(
             {
               token: body.device_token,
@@ -161,7 +161,7 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
       // Also remove from Firestore
       try {
         const firestore = getFirebaseFirestore();
-        const tokenHash = Buffer.from(body.device_token)
+        const token_hash = Buffer.from(body.device_token)
           .toString("base64")
           .substring(0, 50);
 
@@ -169,7 +169,7 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
           .collection("users")
           .doc(userId)
           .collection("devices")
-          .doc(tokenHash)
+          .doc(token_hash)
           .delete();
 
         console.log(

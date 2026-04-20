@@ -16,7 +16,7 @@ This document tracks all API changes, bug fixes, and feature implementations mad
 ```json
 {
   "error": null,
-  "isNewUser": false,
+  "is_new_user": false,
   "onboardingCompleted": false,
   "userProfile": {
     "id": "uuid",
@@ -38,10 +38,6 @@ This document tracks all API changes, bug fixes, and feature implementations mad
 **Changes:**
 - Response now includes `sessionToken` (plain text for client to store)
 - Response includes `userId` for reference
-- Field renames:
-  - `is_new_user` → `isNewUser`
-  - `user` → `userProfile`
-  - Removed: `success`, `message`, `bypass`, `token_hash`
 
 **Session Management:**
 - Session is automatically created in `auth_sessions` table
@@ -249,7 +245,7 @@ x-session-token: sessionToken
 ```json
 {
   "error": null,
-  "isNewUser": boolean,
+  "is_new_user": boolean,
   "onboardingCompleted": boolean,
   "userProfile": { ... },
   "sessionToken": "string",

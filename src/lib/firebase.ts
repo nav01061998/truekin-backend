@@ -30,7 +30,6 @@ export function initializeFirebaseAdmin() {
       if (fs.existsSync(resolvedPath)) {
         const fileContent = fs.readFileSync(resolvedPath, "utf8");
         serviceAccount = JSON.parse(fileContent);
-        console.log("[Firebase] Loaded service account from file:", resolvedPath);
       }
     }
 
@@ -67,7 +66,6 @@ export function initializeFirebaseAdmin() {
     });
 
     firebaseAdminInitialized = true;
-    console.log("[Firebase] Admin SDK initialized successfully");
 
     return firebaseAdmin;
   } catch (error) {

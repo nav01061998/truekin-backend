@@ -35,7 +35,7 @@ Content-Type: application/json
 // Response (SUCCESS)
 {
   "error": null,
-  "isNewUser": false,
+  "is_new_user": false,
   "onboardingCompleted": true,
   "userProfile": {
     "id": "67172ba7-4268-42d2-8fcf-cae3b563368f",
@@ -56,7 +56,7 @@ Content-Type: application/json
 // Response (ERROR)
 {
   "error": "Invalid OTP",
-  "isNewUser": false
+  "is_new_user": false
 }
 ```
 
@@ -225,7 +225,7 @@ Headers: x-user-id, x-session-token
 ```typescript
 {
   "error": "Session expired. Please sign in again.",
-  "isNewUser": false
+  "is_new_user": false
 }
 
 // Handle errors
