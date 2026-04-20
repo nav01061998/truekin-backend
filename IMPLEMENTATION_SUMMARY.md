@@ -1,128 +1,186 @@
-# TrueKin Backend - Phase 1-5 Implementation Summary
+# Backend Implementation Summary - Specification Compliance
 
-## 🎉 COMPLETE IMPLEMENTATION
+## Overview
+Successfully updated the TrueKin backend to comply with the comprehensive backend specification provided. All API endpoints now return exactly 17 fields in a standardized UserProfile format.
 
-All **5 phases** of the profile management and OTP system have been successfully implemented and tested.
+## Key Changes Made
 
----
+### 1. UserProfile Type Definition
+- **File**: `src/services/profile-service.ts`
+- **Change**: Created new `UserProfile` type with exactly 17 fields:
+  ```
+  id, phone, display_name, gender, date_of_birth, health_conditions, avatar_url,
+  onboarding_completed, user_journey_selection_shown, email, email_verified, address,
+  blood_group, height, weight, food_allergies, medicine_allergies
+  ```
+- **Removed Fields**: age, completion_percentage, created_at, updated_at
+- **Impact**: All profile-returning functions now use this type exclusively
 
-## ✅ Phase Completion Status
+### 2. Response Format Standardization
 
-| Phase | Component | Status | Files |
-|-------|-----------|--------|-------|
-| 1 | Database Migrations | ✅ | 3 SQL migrations |
-| 2 | Profile Service & Completion | ✅ | 1 service (updated) |
-| 3 | OTP Endpoints & Service | ✅ | 1 service + 1 route |
-| 4 | Audit Logging & Rate Limiting | ✅ | 3 files (service + lib + middleware) |
-| 5 | Testing Guide & Documentation | ✅ | 3 documentation files |
+#### Authentication Endpoint
+- **Endpoint**: `POST /v1/auth/otp/verify`
+- **Response Format**: 
+  ```json
+  {
+    "success": true,
+    "user_id": "uuid",
+    "is_new_user": false,
+    "token_hash": "session-token-string",
+    "user": { ...17 UserProfile fields... }
+  }
+  ```
 
----
+#### Profile Endpoints
+- **GET /v1/profile/me**: Returns 17 fields directly (not wrapped)
+- **POST /v1/profile/update**: Returns 17 fields directly
+- **POST /v1/profile/address**: Returns 17 fields directly
+- **POST /v1/profile/email/send-otp**: Returns {success, message, masked_email}
+- **POST /v1/profile/email/verify-otp**: Returns {success, message, profile}
 
-## 📦 What's Ready to Use
+### 3. New Onboarding Endpoints
+Created `src/routes/onboarding.ts` with 4 endpoints:
 
-### Database (Phase 1)
-✅ 3 new migrations ready to apply:
-- **012**: Extended profiles (address, blood_group, height, weight, allergies, email, completion_percentage)
-- **013**: OTP requests (EMAIL_VERIFICATION, PHONE_CHANGE tracking)
-- **014**: Audit logs (compliance and monitoring)
+1. **POST /onboarding/name**
+   - Request: {display_name: string}
+   - Response: 17-field UserProfile
 
-### API Endpoints (Phase 3)
-✅ 4 new endpoints ready:
-- `POST /v1/profile/email/send-otp`
-- `POST /v1/profile/email/verify-otp`
-- `POST /v1/profile/phone/send-otp`
-- `POST /v1/profile/phone/verify-otp`
+2. **POST /onboarding/gender**
+   - Request: {gender: enum}
+   - Response: 17-field UserProfile
 
-### Services (Phase 2 & 3)
-✅ Profile service with 6 new functions:
-- saveAddress(), saveBloodGroup(), saveHeight(), saveWeight()
-- saveFoodAllergies(), saveMedicineAllergies()
-- calculateCompletionPercentage() - 10 weighted fields
+3. **POST /onboarding/date-of-birth**
+   - Request: {date_of_birth: YYYY-MM-DD}
+   - Response: 17-field UserProfile
 
-✅ OTP service for profile management:
-- sendEmailOTP(), verifyEmailOTP()
-- sendPhoneOTP(), verifyPhoneOTP()
+4. **POST /onboarding/details**
+   - Request: {address, blood_group, height, weight, health_conditions, food_allergies, medicine_allergies}
+   - Response: 17-field UserProfile
+   - Updates multiple profile fields in one request
 
-### Rate Limiting (Phase 4)
-✅ In-memory rate limiter with sliding window:
-- Email OTP: 5 per hour
-- Phone OTP: 5 per hour
-- OTP verify: 10 per hour
-- Profile update: 50 per hour
+### 4. Version Check Endpoint
+- **Endpoint**: `GET /v1/app/version-check`
+- **Response**: {current_version, update_available}
+- **File**: `src/routes/app.ts`
 
-### Audit Logging (Phase 4)
-✅ Comprehensive audit tracking:
-- Logs to profile_audit_logs table
-- Captures IP, user agent, old/new values
-- Success/failure tracking
-- Analytics functions
+### 5. Session Management Updates
+- **File**: `src/services/otp-service.ts`
+- **Change**: Updated to use `createSession()` from session-service
+- **Impact**: 
+  - Session tokens are now properly created and hashed
+  - token_hash in response is the plain session token (for client to store)
+  - Bypass phone login (918547032018) properly creates sessions
 
----
+### 6. Query Optimization
+- **Updated profileSelect** in all services to query only 17 fields
+- **Removed**: age, completion_percentage, created_at, updated_at from queries
+- **Impact**: Cleaner database queries, consistent data model
 
-## 🚀 Quick Start
+### 7. Helper Functions
+- **toUserProfile()**: Converts internal database profile to 17-field UserProfile
+- **Applied to**: All profile-returning functions
+- **Impact**: Single point of conversion ensures consistency
 
-### Step 1: Apply Migrations
-See `MIGRATION_INSTRUCTIONS.md` for step-by-step instructions
+## Files Modified
 
-### Step 2: Run Tests
-See `TESTING_GUIDE.md` for 13 test scenarios with curl commands
+### Core Service Files
+- `src/services/profile-service.ts`
+  - Updated all function signatures to return `UserProfile`
+  - Added `toUserProfile()` helper function
+  - Updated `profileSelect` constant
+  - Removed `calculateCompletionPercentage` from responses
 
-### Step 3: Monitor Logs
-Watch server output for audit logging and rate limiting events
+- `src/services/otp-service.ts`
+  - Updated to use `createSession()`
+  - Updated response type to remove `bypass` field
+  - Updated `profileSelect` constant
 
----
+### Route Files
+- `src/routes/auth.ts`
+  - Updated `/v1/auth/otp/verify` response format
+  - Removed unnecessary imports
+  - Standardized error responses
 
-## 📚 Documentation Files
+- `src/routes/profile.ts`
+  - Updated `/v1/profile/me` to return unwrapped profile
+  - Updated `/v1/profile/update` to return unwrapped profile
+  - Updated `/v1/profile/address` to return unwrapped profile
+  - Removed duplicate email OTP endpoints (use otp.ts instead)
 
-1. **TESTING_GUIDE.md** - 13 test scenarios with exact curl commands
-2. **MIGRATION_INSTRUCTIONS.md** - Step-by-step Supabase setup
-3. **IMPLEMENTATION_SUMMARY.md** - This file
+- `src/routes/otp.ts`
+  - Updated `profileSelect` to 17 fields
+  - Removed `calculateCompletionPercentage` from responses
+  - Removed unnecessary imports
 
----
+- `src/routes/onboarding.ts` (NEW)
+  - Implements 4 onboarding endpoints
+  - Handles single and batch profile updates
+  - Returns 17-field UserProfile
 
-## 🔧 Technology Stack
+- `src/routes/app.ts` (UPDATED)
+  - Added `/v1/app/version-check` endpoint
 
-- **API Framework**: Fastify with TypeScript
-- **Database**: Supabase (PostgreSQL)
-- **Rate Limiting**: In-memory (Redis ready)
-- **Hashing**: SHA256 for OTP storage
-- **Validation**: Zod schemas
+### Documentation
+- Updated API_CHANGES.md with new response formats
+- Updated FRONTEND_INTEGRATION.md with correct endpoint specifications
+- Updated SESSION_SUMMARY.md with implementation details
 
----
+## Compliance Checklist
 
-## ✨ Key Features
+✅ All profile endpoints return exactly 17 fields
+✅ Removed age from all responses
+✅ Removed completion_percentage from all responses
+✅ Removed created_at/updated_at from all responses
+✅ UserProfile type is single source of truth
+✅ Auth endpoint returns correct format
+✅ Session tokens are properly created and managed
+✅ All onboarding endpoints implemented
+✅ Version check endpoint implemented
+✅ Error responses standardized
+✅ TypeScript compilation successful (no new errors)
 
-✅ Profile completion tracking (0-100%)
-✅ Email verification via OTP
-✅ Phone number changes via OTP
-✅ Rate limiting per endpoint
-✅ Comprehensive audit logging
-✅ Error handling and validation
-✅ IP and user agent tracking
-✅ Auto-cleanup of expired OTPs
+## Testing Recommendations
 
----
+1. **Login Flow**
+   - Test bypass phone: 918547032018 (any 6-digit OTP)
+   - Verify sessionToken is returned and stored
+   - Verify user profile is returned with 17 fields
 
-## 📊 Performance
+2. **Profile Endpoints**
+   - GET /v1/profile/me should return unwrapped 17 fields
+   - POST /v1/profile/update should return unwrapped 17 fields
+   - Verify no completion_percentage in response
 
-- **Rate Limiter**: O(1) lookups, auto-cleanup
-- **Completion Calc**: O(1) - 10 fields check
-- **Audit Logging**: Non-blocking (async)
-- **OTP Verification**: < 50ms response
+3. **Onboarding Flow**
+   - Test each onboarding endpoint
+   - Verify onboarding_completed flag updates correctly
+   - Test onboarding/details batch update
 
----
+4. **Version Check**
+   - GET /v1/app/version-check should return version info
+   - No authentication required
 
-## 🔐 Security
+## Migration Notes
 
-✅ OTP hashing (SHA256)
-✅ Rate limiting (429 on exceed)
-✅ Input validation (Zod)
-✅ Session-based auth
-✅ IP/user agent logging
-✅ Max attempt tracking
+- No database schema changes required
+- Backward compatibility: Old columns (age, completion_percentage, etc.) still exist in DB but are not selected
+- Sessions table still uses SHA256 hashing (no changes needed)
+- Existing user data unaffected
 
----
+## Version Info
 
-**Status**: ✅ Production Ready (Awaiting Migrations & Testing)  
-**Generated**: April 20, 2026  
-**Backend Version**: 1.0.0
+- Commit: 71ef5d3
+- Backend Version: API v1
+- TypeScript: Compiled successfully
+- Node: v18+
+- All 17 profile fields now standard across all endpoints
+
+## Next Steps for Frontend
+
+1. Update to store `token_hash` as `sessionToken` from auth response
+2. Update all authenticated requests to include `x-user-id` and `x-session-token` headers
+3. Remove any code expecting `completion_percentage` in responses
+4. Update profile display to work with 17-field format
+5. Implement onboarding flow using new endpoints
+6. Test all endpoints against new response formats
+
