@@ -4,21 +4,75 @@ import { assertValidSession, type SessionContext } from "./session-service.js";
 export type Profile = {
   id: string;
   phone: string;
+  email: string | null;
+  email_verified: boolean;
   display_name: string | null;
   gender: string | null;
   age: number | null;
   avatar_url: string | null;
-  date_of_birth: Date | null;
+  date_of_birth: string | null;
+  address: string | null;
   health_conditions: string[] | null;
+  blood_group: string | null;
+  height: number | null;
+  weight: number | null;
+  food_allergies: string[] | null;
+  medicine_allergies: string[] | null;
   onboarding_completed: boolean;
   user_journey_selection_shown: boolean;
+  completion_percentage: number;
+  created_at: string;
+  updated_at: string;
 };
 
 const profileSelect =
-  "id, phone, display_name, gender, age, avatar_url, date_of_birth, health_conditions, onboarding_completed, user_journey_selection_shown";
+  "id, phone, email, email_verified, display_name, gender, age, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown, completion_percentage, created_at, updated_at";
 
 function normalizePhone(phone: string): string {
   return phone.trim().replace(/[^\d+]/g, "");
+}
+
+/**
+ * Calculate profile completion percentage
+ *
+ * Personal Information (50%):
+ * - display_name: 10%
+ * - gender: 10%
+ * - date_of_birth: 10%
+ * - email (verified): 10%
+ * - address: 10%
+ *
+ * Health Information (50%):
+ * - health_conditions: 10%
+ * - blood_group: 10%
+ * - height: 10%
+ * - weight: 10%
+ * - food_allergies OR medicine_allergies: 10%
+ */
+export function calculateCompletionPercentage(profile: any): number {
+  let percentage = 0;
+
+  // Personal Information (50%)
+  if (profile.display_name?.trim()) percentage += 10;
+  if (profile.gender) percentage += 10;
+  if (profile.date_of_birth) percentage += 10;
+  if (profile.email && profile.email_verified === true) percentage += 10;
+  if (profile.address?.trim()?.length >= 10) percentage += 10;
+
+  // Health Information (50%)
+  if (Array.isArray(profile.health_conditions) && profile.health_conditions.length > 0)
+    percentage += 10;
+  if (profile.blood_group) percentage += 10;
+  if (profile.height && profile.height > 100 && profile.height < 250) percentage += 10;
+  if (profile.weight && profile.weight > 20 && profile.weight < 250) percentage += 10;
+  if (
+    (Array.isArray(profile.food_allergies) && profile.food_allergies.length > 0) ||
+    (Array.isArray(profile.medicine_allergies) && profile.medicine_allergies.length > 0)
+  ) {
+    percentage += 10;
+  }
+
+  return Math.min(100, Math.max(0, percentage));
 }
 
 function isOnboardingComplete(profile: Profile): boolean {
@@ -42,7 +96,9 @@ async function updateOnboardingStatus(userId: string, profile: Profile): Promise
       .single();
 
     if (error) throw error;
-    return data as Profile;
+    const updatedProfile = data as Profile;
+    updatedProfile.completion_percentage = calculateCompletionPercentage(updatedProfile);
+    return updatedProfile;
   }
 
   return profile;
@@ -81,7 +137,10 @@ export async function getCurrentUserProfile(
 
   if (error) throw error;
   if (!data) throw new Error("Profile could not be loaded");
-  return data as Profile;
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
 }
 
 export async function updateDisplayName(input: {
@@ -128,6 +187,7 @@ export async function updateDisplayName(input: {
   if (!data) throw new Error("Failed to update profile: No data returned");
 
   const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
@@ -150,7 +210,9 @@ export async function completeOnboarding(input: SessionContext): Promise<Profile
   if (error) throw error;
   if (!data) throw new Error("Failed to complete onboarding");
 
-  return data as Profile;
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
 }
 
 export async function saveGender(input: {
@@ -192,6 +254,7 @@ export async function saveGender(input: {
   if (!data) throw new Error("Failed to save gender: No data returned");
 
   const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
@@ -234,7 +297,9 @@ export async function saveRoutineTimes(input: {
   if (error) throw error;
   if (!data) throw new Error("Failed to save routine times");
 
-  return data as Profile;
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
 }
 
 export async function saveDateOfBirth(input: {
@@ -282,6 +347,7 @@ export async function saveDateOfBirth(input: {
   if (!data) throw new Error("Failed to save date of birth: No data returned");
 
   const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
@@ -333,6 +399,7 @@ export async function saveHealthConditions(input: {
   if (!data) throw new Error("Failed to save health conditions: No data returned");
 
   const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
   return await updateOnboardingStatus(authUser.id, profile);
 }
 
@@ -358,5 +425,274 @@ export async function markUserJourneySelectionShown(input: SessionContext): Prom
   }
   if (!data) throw new Error("Failed to update user journey status: No data returned");
 
-  return data as Profile;
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
+}
+
+/**
+ * Save address to profile
+ */
+export async function saveAddress(input: {
+  userId: string;
+  sessionToken: string;
+  address: string;
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const address = input.address.trim();
+
+  if (address.length < 10) {
+    throw new Error("Address must be at least 10 characters");
+  }
+
+  if (address.length > 200) {
+    throw new Error("Address cannot exceed 200 characters");
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ address })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save address error:", error);
+    throw new Error(`Failed to save address: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save address: No data returned");
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
+}
+
+/**
+ * Save blood group to profile
+ */
+export async function saveBloodGroup(input: {
+  userId: string;
+  sessionToken: string;
+  bloodGroup: string;
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const validBloodGroups = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
+  const bloodGroup = String(input.bloodGroup).trim().toUpperCase();
+
+  if (!validBloodGroups.includes(bloodGroup)) {
+    throw new Error(`Invalid blood group. Must be one of: ${validBloodGroups.join(", ")}`);
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ blood_group: bloodGroup })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save blood group error:", error);
+    throw new Error(`Failed to save blood group: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save blood group: No data returned");
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
+}
+
+/**
+ * Save height to profile
+ */
+export async function saveHeight(input: {
+  userId: string;
+  sessionToken: string;
+  height: number;
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const height = Number(input.height);
+
+  if (isNaN(height) || height <= 100 || height >= 250) {
+    throw new Error("Height must be between 100 and 250 cm");
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ height })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save height error:", error);
+    throw new Error(`Failed to save height: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save height: No data returned");
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
+}
+
+/**
+ * Save weight to profile
+ */
+export async function saveWeight(input: {
+  userId: string;
+  sessionToken: string;
+  weight: number;
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const weight = Number(input.weight);
+
+  if (isNaN(weight) || weight <= 20 || weight >= 250) {
+    throw new Error("Weight must be between 20 and 250 kg");
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ weight })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save weight error:", error);
+    throw new Error(`Failed to save weight: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save weight: No data returned");
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
+}
+
+/**
+ * Save food allergies to profile
+ */
+export async function saveFoodAllergies(input: {
+  userId: string;
+  sessionToken: string;
+  foodAllergies: string[];
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const allergies = input.foodAllergies;
+
+  if (!Array.isArray(allergies)) {
+    throw new Error("Food allergies must be an array");
+  }
+
+  if (allergies.length > 10) {
+    throw new Error("Cannot add more than 10 food allergies");
+  }
+
+  const sanitized = allergies
+    .map((a) => String(a).trim())
+    .filter((a) => a.length > 0);
+
+  for (const allergy of sanitized) {
+    if (allergy.length < 2 || allergy.length > 50) {
+      throw new Error("Each allergy must be between 2 and 50 characters");
+    }
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ food_allergies: sanitized })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save food allergies error:", error);
+    throw new Error(`Failed to save food allergies: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save food allergies: No data returned");
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
+}
+
+/**
+ * Save medicine allergies to profile
+ */
+export async function saveMedicineAllergies(input: {
+  userId: string;
+  sessionToken: string;
+  medicineAllergies: string[];
+}): Promise<Profile> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  const allergies = input.medicineAllergies;
+
+  if (!Array.isArray(allergies)) {
+    throw new Error("Medicine allergies must be an array");
+  }
+
+  if (allergies.length > 10) {
+    throw new Error("Cannot add more than 10 medicine allergies");
+  }
+
+  const sanitized = allergies
+    .map((a) => String(a).trim())
+    .filter((a) => a.length > 0);
+
+  for (const allergy of sanitized) {
+    if (allergy.length < 2 || allergy.length > 50) {
+      throw new Error("Each allergy must be between 2 and 50 characters");
+    }
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ medicine_allergies: sanitized })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Save medicine allergies error:", error);
+    throw new Error(`Failed to save medicine allergies: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to save medicine allergies: No data returned");
+
+  const profile = data as Profile;
+  profile.completion_percentage = calculateCompletionPercentage(profile);
+  return profile;
 }

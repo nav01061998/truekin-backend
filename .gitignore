@@ -5,3 +5,6 @@ dist
 
 .vercel
 .env*.local
+
+# Firebase credentials
+truekin-74608-firebase-adminsdk-fbsvc-a128f18368.json
