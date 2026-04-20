@@ -5,6 +5,7 @@ import {
   getCurrentUserProfile,
   updateDisplayName,
   markUserJourneySelectionShown,
+  saveAddress,
 } from "../services/profile-service.js";
 import { deleteUserAccount, type DeletionReason } from "../services/account-deletion-service.js";
 
@@ -27,6 +28,10 @@ function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
 
 const updateNameSchema = z.object({
   display_name: z.string().min(1).max(50),
+});
+
+const updateAddressSchema = z.object({
+  address: z.string().min(1).max(200),
 });
 
 const deleteAccountSchema = z.object({
@@ -107,6 +112,48 @@ export async function registerProfileRoutes(app: FastifyInstance) {
         success: false,
         error:
           error instanceof Error ? error.message : "Failed to update profile",
+      });
+    }
+  });
+
+  app.post("/v1/profile/address", async (request, reply) => {
+    try {
+      const body = updateAddressSchema.parse(request.body);
+      const { userId, sessionToken } = getAuthFromRequest(request);
+
+      if (!userId || !sessionToken) {
+        return reply.code(401).send({
+          success: false,
+          error: "Unauthorized",
+        });
+      }
+
+      const profile = await saveAddress({
+        userId,
+        sessionToken,
+        address: body.address,
+      });
+
+      return {
+        success: true,
+        profile,
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          success: false,
+          error: "Invalid request body",
+          issues: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        });
+      }
+
+      return reply.code(400).send({
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to update address",
       });
     }
   });

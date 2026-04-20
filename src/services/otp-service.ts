@@ -16,10 +16,9 @@ import crypto from "crypto";
  */
 const BYPASS_PHONE = "918547032018";
 
-// Select only columns that are guaranteed to exist in the initial schema
-// Extended profile fields will be added via migrations but we select safely here
+// Select profile columns - includes extended fields that may be null if migrations haven't run
 const profileSelect =
-  "id, phone, email, email_verified, display_name, gender, age, avatar_url, onboarding_completed, created_at, updated_at";
+  "id, phone, email, email_verified, display_name, gender, age, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown, completion_percentage, created_at, updated_at";
 
 function hashOTP(otp: string): string {
   return crypto.createHash("sha256").update(otp).digest("hex");
