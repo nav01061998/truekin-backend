@@ -12,8 +12,12 @@ import crypto from "crypto";
  *
  * This allows testing the full auth flow without SMS delivery.
  * Format: 10 digits starting with 6-9 (e.g., 8547032018)
+ * Accepts with or without country code: +918547032018
  */
-const BYPASS_PHONE = "8547032018";
+const BYPASS_PHONE = "918547032018";
+
+const profileSelect =
+  "id, phone, email, email_verified, display_name, gender, age, avatar_url, date_of_birth, address, health_conditions, blood_group, height, weight, food_allergies, medicine_allergies, onboarding_completed, user_journey_selection_shown, completion_percentage, created_at, updated_at";
 
 function hashOTP(otp: string): string {
   return crypto.createHash("sha256").update(otp).digest("hex");
@@ -23,9 +27,17 @@ function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+
 function isValidPhone(phone: string): boolean {
-  const phoneRegex = /^[6-9]\d{9}$/;
-  return phoneRegex.test(phone.replace(/\D/g, ""));
+  const normalized = phone.replace(/\D/g, "");
+
+  // Accept both formats:
+  // 1. 10 digits starting with 6-9 (without country code): 8547032018
+  // 2. 12 digits starting with 91 followed by 6-9 (with India country code): 918547032018
+  const tenDigitRegex = /^[6-9]\d{9}$/;
+  const twelveDigitRegex = /^91[6-9]\d{9}$/;
+
+  return tenDigitRegex.test(normalized) || twelveDigitRegex.test(normalized);
 }
 
 export async function sendOtp(phone: string): Promise<{
@@ -33,14 +45,7 @@ export async function sendOtp(phone: string): Promise<{
   message: string;
 }> {
   const normalizedPhone = phone.replace(/\D/g, "");
-  console.log(`[OTP] Received request to send OTP to phone: ${normalizedPhone}`);
-  if (!isValidPhone(normalizedPhone)) {
-    throw new Error("Invalid phone format. Must be 10 digits starting with 6-9");
-  }
-
-  // BYPASS: Allow test phone to skip OTP storage
   if (normalizedPhone === BYPASS_PHONE) {
-    console.log(`[OTP BYPASS] Test phone ${normalizedPhone} - OTP bypassed, any code will work`);
     return {
       success: true,
       message: "OTP sent to your phone (test mode - bypass enabled)",
@@ -52,7 +57,7 @@ export async function sendOtp(phone: string): Promise<{
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 10);
 
-  // Store OTP in otp_sessions table (from migration 003)
+
   const { error } = await supabaseAdmin.from("otp_sessions").insert({
     phone_number: normalizedPhone,
     otp_hash: hashedOTP,
@@ -94,12 +99,6 @@ export async function verifyOtp(data: {
 
   // BYPASS: Test phone accepts any 6-digit OTP
   if (normalizedPhone === BYPASS_PHONE) {
-    if (!/^\d{6}$/.test(otp)) {
-      throw new Error("Please enter a valid 6-digit OTP");
-    }
-
-    console.log(`[OTP BYPASS] Verifying test phone ${normalizedPhone} with OTP: ${otp} (bypass mode)`);
-
     // Check if user already exists in auth
     const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
     const existingAuthUser = authUsers?.users?.find((u: any) => u.phone === normalizedPhone);
@@ -146,7 +145,7 @@ export async function verifyOtp(data: {
     // Check if profile exists
     const { data: existingProfile } = await supabaseAdmin
       .from("profiles")
-      .select("id, phone")
+      .select(profileSelect)
       .eq("id", userId)
       .single();
 
@@ -217,7 +216,7 @@ export async function verifyOtp(data: {
   // Check if user exists
   const { data: existingUser } = await supabaseAdmin
     .from("profiles")
-    .select("id, phone")
+    .select(profileSelect)
     .eq("phone", normalizedPhone)
     .single();
 
