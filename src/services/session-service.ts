@@ -21,6 +21,11 @@ export async function createSession(userId: string): Promise<string> {
   const sessionToken = crypto.randomBytes(32).toString("hex");
   const sessionTokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
 
+  console.log("[createSession] Generated token length:", sessionToken.length);
+  console.log("[createSession] Generated hash length:", sessionTokenHash.length);
+  console.log("[createSession] Token:", sessionToken);
+  console.log("[createSession] Hash:", sessionTokenHash);
+
   // Session expires in 30 days
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
@@ -34,9 +39,11 @@ export async function createSession(userId: string): Promise<string> {
     });
 
   if (error) {
+    console.error("[createSession] Failed to insert:", error);
     throw new Error(`Failed to create session: ${error.message}`);
   }
 
+  console.log("[createSession] Session created successfully for user:", userId);
   return sessionToken;
 }
 

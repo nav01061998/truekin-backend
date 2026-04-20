@@ -169,6 +169,7 @@ export async function verifyOtp(data: {
 
     // Create session and get token
     const sessionToken = await createSession(userId);
+    console.log("[OTP] Bypass: Session token created, length:", sessionToken.length, "token:", sessionToken);
 
     // Fetch the full profile to ensure we have all fields
     const { data: fullProfile } = await supabaseAdmin
