@@ -31,11 +31,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const body = verifySchema.parse(request.body);
       const result = await verifyOtp(body);
 
+      // Calculate completion percentage
+      const completionPercentage = result.user ? calculateCompletionPercentage(result.user) : 0;
+
       // Create a session for the user
       const sessionToken = await createSession(result.userId);
 
-      // Calculate completion percentage
-      const completionPercentage = result.user ? calculateCompletionPercentage(result.user) : 0;
       return {
         error: null,
         isNewUser: result.is_new_user,
@@ -58,7 +59,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     } catch (error) {
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "Failed to verify OTP",
-        isNewUser: false,
+        is_new_user: false,
       });
     }
   });
