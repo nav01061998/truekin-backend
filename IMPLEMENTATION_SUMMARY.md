@@ -59,9 +59,15 @@ Created `src/routes/onboarding.ts` with 4 endpoints:
    - Updates multiple profile fields in one request
 
 ### 4. Version Check Endpoint
-- **Endpoint**: `GET /v1/app/version-check`
-- **Response**: {current_version, update_available}
+- **Endpoint**: `POST /v1/app/version-check`
+- **Request**: {appVersion, appName, platform, buildNumber, osVersion, deviceModel}
+- **Response**: {success, updateAvailable, updateRequired, currentVersion, latestVersion, minimumSupportedVersion, updateType}
 - **File**: `src/routes/app.ts`
+- **Features**: 
+  - Accepts platform info (iOS, Android, Web)
+  - Compares versions for update availability
+  - Returns required vs optional update status
+  - Enforces minimum supported version
 
 ### 5. Session Management Updates
 - **File**: `src/services/otp-service.ts`
@@ -118,7 +124,10 @@ Created `src/routes/onboarding.ts` with 4 endpoints:
   - Returns 17-field UserProfile
 
 - `src/routes/app.ts` (UPDATED)
-  - Added `/v1/app/version-check` endpoint
+  - Added `POST /v1/app/version-check` endpoint
+  - Accepts app version info (appVersion, appName, platform, buildNumber, osVersion, deviceModel)
+  - Returns version comparison results with updateAvailable, updateRequired, and updateType
+  - Enforces minimum supported version
 
 ### Documentation
 - Updated API_CHANGES.md with new response formats
@@ -157,7 +166,11 @@ Created `src/routes/onboarding.ts` with 4 endpoints:
    - Test onboarding/details batch update
 
 4. **Version Check**
-   - GET /v1/app/version-check should return version info
+   - POST /v1/app/version-check with platform info
+   - Test with different app versions (older, current, newer)
+   - Verify updateRequired flag when version is below minimum
+   - Verify updateAvailable flag for optional updates
+   - Verify updateType returns "none", "optional", or "required"
    - No authentication required
 
 ## Migration Notes

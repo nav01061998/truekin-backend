@@ -122,12 +122,29 @@ All profile endpoints return this exact structure:
 
 ## App Information
 
-### GET /v1/app/version-check
+### POST /v1/app/version-check
+**Request**:
+```json
+{
+  "appVersion": "1.0.0",
+  "appName": "TrueKin",
+  "platform": "ios|android|web",
+  "buildNumber": "42",
+  "osVersion": "17.4.1",
+  "deviceModel": "iPhone 14 Pro"
+}
+```
+
 **Response**: 
 ```json
 {
-  "current_version": "1.0.0",
-  "update_available": false
+  "success": true,
+  "updateAvailable": false,
+  "updateRequired": false,
+  "currentVersion": "1.0.0",
+  "latestVersion": "1.0.0",
+  "minimumSupportedVersion": "0.9.0",
+  "updateType": "none|optional|required"
 }
 ```
 
