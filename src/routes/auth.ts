@@ -28,19 +28,27 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     try {
       const body = verifySchema.parse(request.body);
       const result = await verifyOtp(body);
+
       return {
-        success: true,
-        user_id: result.userId,
-        is_new_user: result.isNewUser,
-        token_hash: result.tokenHash,
-        bypass: result.bypass,
-        user: result.user,
+        error: null,
+        isNewUser: result.isNewUser,
+        onboardingCompleted: result.user?.onboarding_completed ?? false,
+        userProfile: result.user ? {
+          id: result.user.id,
+          phone: result.user.phone,
+          display_name: result.user.display_name ?? null,
+          gender: result.user.gender ?? null,
+          date_of_birth: result.user.date_of_birth ?? null,
+          health_conditions: result.user.health_conditions ?? null,
+          avatar_url: result.user.avatar_url ?? null,
+          onboarding_completed: result.user.onboarding_completed ?? false,
+          user_journey_selection_shown: result.user.user_journey_selection_shown ?? false,
+        } : undefined,
       };
     } catch (error) {
       return reply.code(400).send({
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Failed to verify OTP",
+        error: error instanceof Error ? error.message : "Failed to verify OTP",
+        isNewUser: false,
       });
     }
   });
