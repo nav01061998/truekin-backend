@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import { supabaseAdmin } from "./supabase.js";
 
 // Request context that flows through the gateway
@@ -66,11 +66,14 @@ async function validateSession(userId: string, sessionToken: string): Promise<bo
       return false;
     }
 
+    // Hash the session token for comparison (same as done during creation)
+    const sessionTokenHash = createHash("sha256").update(sessionToken).digest("hex");
+
     const { data: sessionRow, error: sessionError } = await supabaseAdmin
       .from("auth_sessions")
       .select("user_id, session_token_hash, expires_at, revoked_at")
       .eq("user_id", userId)
-      .eq("session_token_hash", sessionToken)
+      .eq("session_token_hash", sessionTokenHash)
       .maybeSingle();
 
     if (sessionError || !sessionRow) {

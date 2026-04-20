@@ -48,6 +48,7 @@ export async function createSession(userId: string): Promise<string> {
 }
 
 export async function assertValidSession(input: SessionContext) {
+  console.log("[assertValidSession] Validating session for userId:", input.userId);
   const userId = normalize(input.userId);
   const sessionToken = normalize(input.sessionToken);
 
