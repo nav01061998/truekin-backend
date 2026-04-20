@@ -135,16 +135,16 @@ export async function sendPushNotification(
   };
 
   try {
-    const response = await messaging.sendMulticast({
+    const response = await (messaging as any).sendMulticast({
       tokens,
       ...message,
-    } as any);
+    });
 
     console.log(`[Firebase] Sent push notification to ${response.successCount} devices`);
 
     if (response.failureCount > 0) {
       console.warn(`[Firebase] Failed to send to ${response.failureCount} devices`);
-      response.responses.forEach((resp, idx) => {
+      response.responses.forEach((resp: any, idx: number) => {
         if (!resp.success) {
           console.warn(`[Firebase] Failed token ${tokens[idx]}: ${resp.error?.message}`);
         }
