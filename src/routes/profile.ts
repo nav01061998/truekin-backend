@@ -7,6 +7,7 @@ import {
   markUserJourneySelectionShown,
   saveAddress,
   updateUserProfile,
+  uploadAvatar,
   type UserProfile,
 } from "../services/profile-service.js";
 import { deleteUserAccount, type DeletionReason } from "../services/account-deletion-service.js";
@@ -48,6 +49,11 @@ const updateProfileSchema = z.object({
   weight: z.number().min(20).max(250).optional(),
   food_allergies: z.array(z.string()).optional(),
   medicine_allergies: z.array(z.string()).optional(),
+});
+
+const uploadAvatarSchema = z.object({
+  image_data: z.string().min(1),
+  image_format: z.enum(["jpeg", "png", "webp"]),
 });
 
 const deleteAccountSchema = z.object({
@@ -207,6 +213,75 @@ export async function registerProfileRoutes(app: FastifyInstance) {
 
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "Failed to update address",
+      });
+    }
+  });
+
+  app.post("/v1/profile/upload-avatar", async (request, reply) => {
+    try {
+      const body = uploadAvatarSchema.parse(request.body);
+      const { userId, sessionToken } = getAuthFromRequest(request);
+
+      if (!userId || !sessionToken) {
+        return reply.code(401).send({
+          error: "Unauthorized",
+        });
+      }
+
+      const { profile, completion_percentage } = await uploadAvatar({
+        userId,
+        sessionToken,
+        imageData: body.image_data,
+        imageFormat: body.image_format,
+      });
+
+      // Return wrapped response with success, message, and profile with completion_percentage
+      return {
+        success: true,
+        message: "Avatar uploaded successfully",
+        ...profile,
+        completion_percentage,
+      };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: "Invalid request body",
+        });
+      }
+
+      const message = error instanceof Error ? error.message : "Failed to upload avatar";
+
+      // Handle specific error cases
+      if (message.includes("Unauthorized") || message.includes("Session expired")) {
+        return reply.code(401).send({
+          error: "Invalid or expired session",
+          message: "Please login again",
+        });
+      }
+
+      if (message.includes("Session revoked")) {
+        return reply.code(403).send({
+          error: "Session revoked",
+          message: "Your session is no longer valid",
+        });
+      }
+
+      if (message.includes("too large")) {
+        return reply.code(413).send({
+          error: "Payload Too Large",
+          message: "Image file is too large (max 5MB)",
+        });
+      }
+
+      if (message.includes("Unsupported") || message.includes("format")) {
+        return reply.code(415).send({
+          error: "Unsupported Media Type",
+          message: "Image format must be jpeg, png, or webp",
+        });
+      }
+
+      return reply.code(400).send({
+        error: message,
       });
     }
   });

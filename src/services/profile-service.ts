@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../lib/supabase.js";
 import { assertValidSession, type SessionContext } from "./session-service.js";
+import { createHash } from "crypto";
 
 // UserProfile is the exact 17-field type returned in all API responses
 export type UserProfile = {
@@ -857,6 +858,118 @@ export async function updateUserProfile(input: {
 
   return {
     profile: updated,
+    completion_percentage,
+  };
+}
+
+/**
+ * Upload and store user avatar, update profile with avatar_url
+ * Image is stored in Supabase Storage under profileImageUrl bucket
+ */
+export async function uploadAvatar(input: {
+  userId: string;
+  sessionToken: string;
+  imageData: string;
+  imageFormat: "jpeg" | "png" | "webp";
+}): Promise<{ profile: UserProfile; completion_percentage: number }> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  // Validate image format
+  const validFormats = ["jpeg", "png", "webp"];
+  if (!validFormats.includes(input.imageFormat)) {
+    throw new Error("Unsupported image format. Must be jpeg, png, or webp");
+  }
+
+  // Decode base64 to buffer
+  let imageBuffer: Buffer;
+  try {
+    imageBuffer = Buffer.from(input.imageData, "base64");
+  } catch (error) {
+    throw new Error("Invalid base64 image data");
+  }
+
+  // Validate image size (5MB max)
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  if (imageBuffer.length > maxSize) {
+    throw new Error("Image file is too large (max 5MB uncompressed)");
+  }
+
+  // Validate image by checking magic bytes (file signatures)
+  const magicBytes = imageBuffer.slice(0, 12);
+  const isJpeg = magicBytes[0] === 0xff && magicBytes[1] === 0xd8 && magicBytes[2] === 0xff;
+  const isPng =
+    magicBytes[0] === 0x89 &&
+    magicBytes[1] === 0x50 &&
+    magicBytes[2] === 0x4e &&
+    magicBytes[3] === 0x47;
+  const isWebp =
+    magicBytes[0] === 0x52 &&
+    magicBytes[1] === 0x49 &&
+    magicBytes[2] === 0x46 &&
+    magicBytes[3] === 0x46 &&
+    magicBytes[8] === 0x57 &&
+    magicBytes[9] === 0x45 &&
+    magicBytes[10] === 0x42 &&
+    magicBytes[11] === 0x50;
+
+  // Validate format matches magic bytes
+  if (input.imageFormat === "jpeg" && !isJpeg) {
+    throw new Error("Invalid JPEG file format");
+  }
+  if (input.imageFormat === "png" && !isPng) {
+    throw new Error("Invalid PNG file format");
+  }
+  if (input.imageFormat === "webp" && !isWebp) {
+    throw new Error("Invalid WebP file format");
+  }
+
+  // Generate unique filename using user ID and hash of image
+  const imageHash = createHash("md5").update(imageBuffer).digest("hex");
+  const fileExtension = input.imageFormat === "jpeg" ? "jpg" : input.imageFormat;
+  const filename = `${authUser.id}-${imageHash}.${fileExtension}`;
+
+  // Upload to Supabase Storage
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from("profileImageUrl")
+    .upload(`avatars/${filename}`, imageBuffer, {
+      contentType: `image/${input.imageFormat === "jpeg" ? "jpeg" : input.imageFormat}`,
+      upsert: true, // Replace if exists
+    });
+
+  if (uploadError) {
+    console.error("Avatar upload error:", uploadError);
+    throw new Error(`Failed to upload avatar: ${uploadError.message}`);
+  }
+
+  // Get public URL from storage
+  const { data: publicUrlData } = supabaseAdmin.storage
+    .from("profileImageUrl")
+    .getPublicUrl(`avatars/${filename}`);
+
+  const avatarUrl = publicUrlData.publicUrl;
+
+  // Update profile with avatar_url
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Failed to update profile with avatar_url:", error);
+    throw new Error(`Failed to update profile: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to update profile: No data returned");
+
+  const profile = toUserProfile(data);
+  const completion_percentage = calculateCompletionPercentage(data);
+
+  return {
+    profile,
     completion_percentage,
   };
 }
