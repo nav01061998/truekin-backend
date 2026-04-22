@@ -700,3 +700,163 @@ export async function saveMedicineAllergies(input: {
 
   return toUserProfile(data);
 }
+
+/**
+ * Update user profile with multiple fields and calculate completion percentage
+ * Returns both the updated profile and completion percentage
+ */
+export async function updateUserProfile(input: {
+  userId: string;
+  sessionToken: string;
+  displayName?: string;
+  gender?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  healthConditions?: string[];
+  bloodGroup?: string;
+  height?: number;
+  weight?: number;
+  foodAllergies?: string[];
+  medicineAllergies?: string[];
+}): Promise<{ profile: UserProfile; completion_percentage: number }> {
+  const authUser = await assertValidSession({
+    userId: input.userId,
+    sessionToken: input.sessionToken,
+  });
+
+  // Build update object with only provided fields
+  const updateData: any = {};
+
+  if (input.displayName !== undefined) {
+    const displayName = input.displayName.replace(/\s+/g, " ").trim();
+    if (displayName.length < 1) throw new Error("Display name cannot be empty");
+    if (displayName.length > 50) throw new Error("Display name too long");
+    if (/[\u0000-\u001F\u007F]/.test(displayName)) throw new Error("Invalid characters in name");
+    updateData.display_name = displayName;
+  }
+
+  if (input.gender !== undefined) {
+    const validGenders = ["male", "female", "other", "prefer not to say"];
+    if (!validGenders.includes(input.gender)) {
+      throw new Error(`Invalid gender. Must be one of: ${validGenders.join(", ")}`);
+    }
+    updateData.gender = input.gender;
+  }
+
+  if (input.email !== undefined) {
+    if (!input.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      throw new Error("Invalid email format");
+    }
+    updateData.email = input.email;
+  }
+
+  if (input.phone !== undefined) {
+    const normalized = input.phone.replace(/\D/g, "");
+    updateData.phone = normalized;
+  }
+
+  if (input.address !== undefined) {
+    if (input.address.length < 10) throw new Error("Address must be at least 10 characters");
+    if (input.address.length > 200) throw new Error("Address cannot exceed 200 characters");
+    updateData.address = input.address.trim();
+  }
+
+  if (input.healthConditions !== undefined) {
+    if (Array.isArray(input.healthConditions) && input.healthConditions.length > 0) {
+      const sanitized = input.healthConditions
+        .map((c) => String(c).trim())
+        .filter((c) => c.length > 0);
+      if (sanitized.length > 0) {
+        updateData.health_conditions = sanitized;
+      }
+    }
+  }
+
+  if (input.bloodGroup !== undefined) {
+    const validBloodGroups = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
+    const bloodGroup = String(input.bloodGroup).trim().toUpperCase();
+    if (!validBloodGroups.includes(bloodGroup)) {
+      throw new Error(`Invalid blood group. Must be one of: ${validBloodGroups.join(", ")}`);
+    }
+    updateData.blood_group = bloodGroup;
+  }
+
+  if (input.height !== undefined) {
+    if (input.height < 100 || input.height > 250) {
+      throw new Error("Height must be between 100 and 250 cm");
+    }
+    updateData.height = input.height;
+  }
+
+  if (input.weight !== undefined) {
+    if (input.weight < 20 || input.weight > 250) {
+      throw new Error("Weight must be between 20 and 250 kg");
+    }
+    updateData.weight = input.weight;
+  }
+
+  if (input.foodAllergies !== undefined) {
+    if (Array.isArray(input.foodAllergies) && input.foodAllergies.length > 0) {
+      const sanitized = input.foodAllergies
+        .map((a) => String(a).trim())
+        .filter((a) => a.length > 0);
+      if (sanitized.length > 0) {
+        updateData.food_allergies = sanitized;
+      }
+    }
+  }
+
+  if (input.medicineAllergies !== undefined) {
+    if (Array.isArray(input.medicineAllergies) && input.medicineAllergies.length > 0) {
+      const sanitized = input.medicineAllergies
+        .map((a) => String(a).trim())
+        .filter((a) => a.length > 0);
+      if (sanitized.length > 0) {
+        updateData.medicine_allergies = sanitized;
+      }
+    }
+  }
+
+  // If no fields to update, return current profile
+  if (Object.keys(updateData).length === 0) {
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select(profileSelect)
+      .eq("id", authUser.id)
+      .single();
+
+    if (error || !data) throw new Error("Failed to fetch profile");
+
+    const profile = toUserProfile(data);
+    const completion = calculateCompletionPercentage(data);
+    return { profile, completion_percentage: completion };
+  }
+
+  await ensureProfileRow(authUser.id, authUser.phone || "");
+
+  // Update profile
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .update(updateData)
+    .eq("id", authUser.id)
+    .select(profileSelect)
+    .single();
+
+  if (error) {
+    console.error("Update profile error:", error);
+    throw new Error(`Failed to update profile: ${error.message}`);
+  }
+  if (!data) throw new Error("Failed to update profile: No data returned");
+
+  const profile = toUserProfile(data);
+  const completion_percentage = calculateCompletionPercentage(data);
+
+  // Update onboarding status if needed
+  const updated = await updateOnboardingStatus(authUser.id, profile);
+
+  return {
+    profile: updated,
+    completion_percentage,
+  };
+}

@@ -6,6 +6,7 @@ import {
   updateDisplayName,
   markUserJourneySelectionShown,
   saveAddress,
+  updateUserProfile,
   type UserProfile,
 } from "../services/profile-service.js";
 import { deleteUserAccount, type DeletionReason } from "../services/account-deletion-service.js";
@@ -33,6 +34,20 @@ const updateNameSchema = z.object({
 
 const updateAddressSchema = z.object({
   address: z.string().min(1).max(200),
+});
+
+const updateProfileSchema = z.object({
+  display_name: z.string().min(1).max(50).optional(),
+  gender: z.enum(["male", "female", "other", "prefer not to say"]).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  address: z.string().min(10).max(200).optional(),
+  health_conditions: z.array(z.string()).optional(),
+  blood_group: z.enum(["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"]).optional(),
+  height: z.number().min(100).max(250).optional(),
+  weight: z.number().min(20).max(250).optional(),
+  food_allergies: z.array(z.string()).optional(),
+  medicine_allergies: z.array(z.string()).optional(),
 });
 
 const deleteAccountSchema = z.object({
@@ -117,7 +132,7 @@ export async function registerProfileRoutes(app: FastifyInstance) {
 
   app.post("/v1/profile/update", async (request, reply) => {
     try {
-      const body = updateNameSchema.parse(request.body);
+      const body = updateProfileSchema.parse(request.body);
       const { userId, sessionToken } = getAuthFromRequest(request);
 
       if (!userId || !sessionToken) {
@@ -126,14 +141,31 @@ export async function registerProfileRoutes(app: FastifyInstance) {
         });
       }
 
-      const profile = await updateDisplayName({
+      const { profile, completion_percentage } = await updateUserProfile({
         userId,
         sessionToken,
         displayName: body.display_name,
+        gender: body.gender,
+        email: body.email,
+        phone: body.phone,
+        address: body.address,
+        healthConditions: body.health_conditions,
+        bloodGroup: body.blood_group,
+        height: body.height,
+        weight: body.weight,
+        foodAllergies: body.food_allergies,
+        medicineAllergies: body.medicine_allergies,
       });
 
-      // Return the 17-field profile directly
-      return profile;
+      // Return wrapped response with success, message, and profile with completion_percentage
+      return {
+        success: true,
+        message: "Profile updated successfully",
+        profile: {
+          ...profile,
+          completion_percentage,
+        },
+      };
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({
