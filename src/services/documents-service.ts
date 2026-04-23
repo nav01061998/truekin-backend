@@ -41,6 +41,12 @@ export type Report = {
   updatedAt: string;
 };
 
+export type EmptyState = {
+  title: string;
+  description: string;
+  imageUrl: string | null;
+};
+
 export type PaginationInfo = {
   total: number;
   page: number;
@@ -49,9 +55,16 @@ export type PaginationInfo = {
   hasMore: boolean;
 };
 
+export type DocumentSegment = {
+  documents: Prescription[] | Report[];
+  emptyState: EmptyState;
+};
+
 export type DocumentsResponse = {
-  prescriptions: Prescription[];
-  reports: Report[];
+  pageTitle: string;
+  backLabel: string;
+  prescriptions: DocumentSegment;
+  reports: DocumentSegment;
   pagination: PaginationInfo;
 };
 
@@ -206,11 +219,26 @@ export async function getAllDocuments(
     const page = Math.floor(offset / limit) + 1;
     const hasMore = offset + limit < totalCount;
 
-    // Return response with empty arrays if no documents found
-    // This is not an error - just means user has no documents yet
+    // Return response with empty states for each segment
     return {
-      prescriptions,
-      reports,
+      pageTitle: "My Documents",
+      backLabel: "Account",
+      prescriptions: {
+        documents: prescriptions,
+        emptyState: {
+          title: "No Prescriptions",
+          description: "You don't have any prescriptions yet. Add a prescription when needed.",
+          imageUrl: null,
+        },
+      },
+      reports: {
+        documents: reports,
+        emptyState: {
+          title: "No Medical Reports",
+          description: "Your medical reports will appear here. Upload or add reports to view them.",
+          imageUrl: null,
+        },
+      },
       pagination: {
         total: totalCount,
         page,
