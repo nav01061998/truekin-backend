@@ -20,7 +20,7 @@ function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
 }
 
 const documentsQuerySchema = z.object({
-  userId: z.string().min(1, "userId is required").optional(),
+  userId: z.string().min(1, "userId is required"),
   type: z.enum(["prescriptions", "reports", "all"]).optional().default("all"),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
@@ -45,11 +45,8 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
         });
       }
 
-      // Use userId from query param if provided, otherwise use from header
-      const requestedUserId = queryParams.userId || userId;
-
-      // Verify userId matches authenticated user (security check)
-      if (requestedUserId !== userId) {
+      // Verify requested userId matches authenticated user (security check)
+      if (queryParams.userId !== userId) {
         return reply.code(403).send({
           success: false,
           error: "Unauthorized to access this user's documents",
@@ -58,7 +55,7 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
       }
 
       const documentsData = await getAllDocuments({
-        userId: requestedUserId,
+        userId: queryParams.userId,
         sessionToken,
         type: queryParams.type,
         limit: queryParams.limit,
@@ -97,14 +94,6 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
           success: false,
           error: "userId is required",
           code: "MISSING_REQUIRED_FIELD",
-        });
-      }
-
-      if (message.includes("No documents found")) {
-        return reply.code(404).send({
-          success: false,
-          error: "No documents found for this user",
-          code: "NOT_FOUND",
         });
       }
 

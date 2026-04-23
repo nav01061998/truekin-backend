@@ -202,15 +202,12 @@ export async function getAllDocuments(
       }
     }
 
-    // If no documents found, throw 404 error
-    if (prescriptions.length === 0 && reports.length === 0) {
-      throw new Error("No documents found for this user");
-    }
-
     // Calculate pagination info
     const page = Math.floor(offset / limit) + 1;
     const hasMore = offset + limit < totalCount;
 
+    // Return response with empty arrays if no documents found
+    // This is not an error - just means user has no documents yet
     return {
       prescriptions,
       reports,
