@@ -1,6 +1,4 @@
 import winston from "winston";
-// @ts-ignore - winston-elasticsearch doesn't have proper TypeScript types
-const ElasticsearchTransport = require("winston-elasticsearch").ElasticsearchTransport;
 
 // Environment configuration
 const elkEnabled = process.env.ELK_ENABLED === "true";
@@ -58,26 +56,34 @@ logger.add(
   })
 );
 
-// ELK Transport - sends logs to Elasticsearch
+// ELK Transport - sends logs to Elasticsearch (lazy loaded to avoid errors if not available)
 if (elkEnabled) {
-  logger.add(
-    new ElasticsearchTransport({
-      level: "info",
-      clientOpts: { node: elkNode },
-      index: "truekin-logs",
-      transformer: (logData: any) => {
-        return {
-          "@timestamp": new Date(),
-          message: logData.message,
-          severity: logData.level,
-          fields: logData.meta,
-          service: "truekin-backend",
-          environment,
-        };
-      },
-      flushInterval: 2000, // Flush logs every 2 seconds
-    })
-  );
+  try {
+    // @ts-ignore - dynamic import for ES modules
+    import("winston-elasticsearch").then((module) => {
+      const ElasticsearchTransport = module.ElasticsearchTransport;
+      logger.add(
+        new ElasticsearchTransport({
+          level: "info",
+          clientOpts: { node: elkNode },
+          index: "truekin-logs",
+          transformer: (logData: any) => {
+            return {
+              "@timestamp": new Date(),
+              message: logData.message,
+              severity: logData.level,
+              fields: logData.meta,
+              service: "truekin-backend",
+              environment,
+            };
+          },
+          flushInterval: 2000, // Flush logs every 2 seconds
+        })
+      );
+    });
+  } catch (error) {
+    logger.warn("ElasticsearchTransport not available, ELK logging disabled");
+  }
 }
 
 /**
