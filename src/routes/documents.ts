@@ -20,7 +20,7 @@ function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
 }
 
 const documentsQuerySchema = z.object({
-  userId: z.string().min(1, "userId is required"),
+  userId: z.string().min(1, "userId is required").optional(),
   type: z.enum(["prescriptions", "reports", "all"]).optional().default("all"),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
@@ -45,8 +45,11 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
         });
       }
 
-      // Verify userId matches authenticated user
-      if (queryParams.userId !== userId) {
+      // Use userId from query param if provided, otherwise use from header
+      const requestedUserId = queryParams.userId || userId;
+
+      // Verify userId matches authenticated user (security check)
+      if (requestedUserId !== userId) {
         return reply.code(403).send({
           success: false,
           error: "Unauthorized to access this user's documents",
@@ -55,7 +58,7 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
       }
 
       const documentsData = await getAllDocuments({
-        userId: queryParams.userId,
+        userId: requestedUserId,
         sessionToken,
         type: queryParams.type,
         limit: queryParams.limit,
