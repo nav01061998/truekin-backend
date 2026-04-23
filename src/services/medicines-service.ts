@@ -25,7 +25,7 @@ export type MedicineSegment = {
 };
 
 export type MedicineSection = {
-  date: string;
+  dateRange: string;
   medicines: Medicine[];
 };
 
@@ -214,7 +214,7 @@ export async function getMedicinesList(userId: string): Promise<MedicinesListRes
       medicines: dailyWeeklyMedicines,
       emptyState: {
         title: "No Daily/Weekly Medicines",
-        description: "You don't have any regularly scheduled medicines...",
+        description: "You don't have any regularly scheduled medicines. Start by adding your first routine medicine.",
         imageUrl: null,
       },
     },
@@ -222,7 +222,7 @@ export async function getMedicinesList(userId: string): Promise<MedicinesListRes
       medicines: currentlyTakingMedicines,
       emptyState: {
         title: "No Active Medicines",
-        description: "You're not currently taking any medicines...",
+        description: "You're not currently taking any medicines. Add a new medicine when needed.",
         imageUrl: null,
       },
     },
@@ -230,7 +230,7 @@ export async function getMedicinesList(userId: string): Promise<MedicinesListRes
       sections: pastMedicinesSections,
       emptyState: {
         title: "No Past Medicines",
-        description: "Your medication history will be displayed here...",
+        description: "Your medication history will be displayed here.",
         imageUrl: null,
       },
     },
@@ -246,30 +246,47 @@ function isDailyOrWeekly(frequency: string): boolean {
 }
 
 /**
+ * Format date to "MMMM YYYY" format (e.g., "February 2026", "January 2026")
+ */
+function formatDateRange(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      return dateString; // Return as-is if unparseable
+    }
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  } catch {
+    return dateString;
+  }
+}
+
+/**
  * Group medicines by date (for past medicines)
  */
 function groupMedicinesByDate(medicines: Medicine[]): MedicineSection[] {
   const groups: Map<string, Medicine[]> = new Map();
 
   medicines.forEach((medicine) => {
-    const date = medicine.startedOn || "Unknown Date";
-    if (!groups.has(date)) {
-      groups.set(date, []);
+    const dateStr = medicine.startedOn || "Unknown Date";
+    const formattedDate = formatDateRange(dateStr);
+
+    if (!groups.has(formattedDate)) {
+      groups.set(formattedDate, []);
     }
-    groups.get(date)!.push(medicine);
+    groups.get(formattedDate)!.push(medicine);
   });
 
   // Convert to array and sort by date
   return Array.from(groups.entries())
-    .map(([date, meds]) => ({
-      date,
+    .map(([dateRange, meds]) => ({
+      dateRange,
       medicines: meds,
     }))
     .sort((a, b) => {
       // Sort by date descending (newest first)
-      // If dates are unparseable, keep them as is
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
+      // Try to parse dates for proper sorting
+      const dateA = new Date(a.dateRange).getTime();
+      const dateB = new Date(b.dateRange).getTime();
       if (isNaN(dateA) || isNaN(dateB)) return 0;
       return dateB - dateA;
     });

@@ -15,6 +15,7 @@ import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerOTPRoutes } from "./routes/otp.js";
 import { registerMedicinesRoutes } from "./routes/medicines.js";
+import { registerFamilyRoutes } from "./routes/family.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -46,6 +47,7 @@ export async function buildApp() {
   await registerPrescriptionRoutes(app);
   await registerProfileRoutes(app);
   await registerMedicinesRoutes(app);
+  await registerFamilyRoutes(app);
   await registerNotificationRoutes(app);
   await registerOTPRoutes(app);
 
