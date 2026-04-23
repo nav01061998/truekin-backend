@@ -17,6 +17,7 @@ import { registerOTPRoutes } from "./routes/otp.js";
 import { registerMedicinesRoutes } from "./routes/medicines.js";
 import { registerFamilyRoutes } from "./routes/family.js";
 import { registerDocumentsRoutes } from "./routes/documents.js";
+import { setupLoggingMiddleware } from "./middleware/logging-middleware.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -30,6 +31,9 @@ export async function buildApp() {
 
   // Setup API Gateway (request validation, rate limiting, logging, etc.)
   await setupGateway(app);
+
+  // Setup comprehensive logging middleware (ELK integration)
+  await setupLoggingMiddleware(app);
 
   // Initialize rate limiting middleware
   createRateLimitMiddleware(app);

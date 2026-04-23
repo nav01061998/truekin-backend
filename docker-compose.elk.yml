@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Elasticsearch - stores and indexes logs
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    container_name: truekin-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: curl -s http://localhost:9200 >/dev/null || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - truekin-network
+
+  # Logstash - processes and forwards logs
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.0
+    container_name: truekin-logstash
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    ports:
+      - "5000:5000"
+      - "9600:9600"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - "LS_JAVA_OPTS=-Xmx256m -Xms256m"
+    networks:
+      - truekin-network
+
+  # Kibana - visualization and exploration tool
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.0
+    container_name: truekin-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - truekin-network
+    healthcheck:
+      test: curl -s http://localhost:5601 >/dev/null || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+networks:
+  truekin-network:
+    driver: bridge
