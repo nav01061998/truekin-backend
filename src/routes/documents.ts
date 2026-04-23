@@ -65,10 +65,7 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
         toDate: queryParams.toDate,
       });
 
-      return {
-        success: true,
-        data: documentsData,
-      };
+      return documentsData;
     } catch (error) {
       if (error instanceof ZodError) {
         const firstError = error.issues[0];

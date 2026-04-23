@@ -221,8 +221,8 @@ export async function getAllDocuments(
 
     // Return response with empty states for each segment
     return {
-      pageTitle: "My Documents",
-      backLabel: "Account",
+      pageTitle: "Medical Documents",
+      backLabel: "Documents",
       prescriptions: {
         documents: prescriptions,
         emptyState: {

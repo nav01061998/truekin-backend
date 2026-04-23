@@ -58,8 +58,6 @@ export async function registerMedicinesRoutes(app: FastifyInstance) {
       });
 
       return {
-        success: true,
-        message: "Medicine added successfully",
         data: medicinesList,
       };
     } catch (error) {
@@ -128,7 +126,6 @@ export async function registerMedicinesRoutes(app: FastifyInstance) {
       const medicinesList = await getMedicinesList(userId);
 
       return {
-        success: true,
         data: medicinesList,
       };
     } catch (error) {
