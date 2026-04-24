@@ -58,6 +58,7 @@ export type PaginationInfo = {
 
 export type DocumentSegment = {
   documents: Prescription[] | Report[];
+  pagination: PaginationInfo;
   emptyState: EmptyState;
 };
 
@@ -66,22 +67,25 @@ export type DocumentsResponse = {
   backLabel: string;
   prescriptions: DocumentSegment;
   reports: DocumentSegment;
-  pagination: PaginationInfo;
 };
 
 /**
- * Get all documents (prescriptions and reports) for a user with filtering and pagination
+ * Get all documents (prescriptions and reports) for a user with separate pagination for each section
  */
 export async function getAllDocuments(
   input: {
     userId: string;
     sessionToken: string;
-    type?: "prescriptions" | "reports" | "all";
-    limit?: number;
-    offset?: number;
-    status?: string;
-    fromDate?: string;
-    toDate?: string;
+    prescriptionsPage?: number;
+    prescriptionsLimit?: number;
+    prescriptionsStatus?: string;
+    prescriptionsFromDate?: string;
+    prescriptionsToDate?: string;
+    reportsPage?: number;
+    reportsLimit?: number;
+    reportsStatus?: string;
+    reportsFromDate?: string;
+    reportsToDate?: string;
   }
 ): Promise<DocumentsResponse> {
   const requestId = `doc-service-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -89,12 +93,12 @@ export async function getAllDocuments(
   console.log(`[${requestId}] getAllDocuments called with input:`, {
     userId: input.userId,
     sessionToken: input.sessionToken ? "***REDACTED***" : "MISSING",
-    type: input.type,
-    limit: input.limit,
-    offset: input.offset,
-    status: input.status,
-    fromDate: input.fromDate,
-    toDate: input.toDate,
+    prescriptionsPage: input.prescriptionsPage,
+    prescriptionsLimit: input.prescriptionsLimit,
+    prescriptionsStatus: input.prescriptionsStatus,
+    reportsPage: input.reportsPage,
+    reportsLimit: input.reportsLimit,
+    reportsStatus: input.reportsStatus,
   });
 
   try {
@@ -107,204 +111,219 @@ export async function getAllDocuments(
     console.log(`[${requestId}] Session validated successfully for user: ${authUser?.id}`);
     logger.info("DOCUMENTS_SESSION_VALID", { requestId, userId: input.userId });
 
-    // Defaults
-    const docType = input.type || "all";
-    const limit = Math.min(input.limit || 20, 100); // Max 100 items per page
-    const offset = input.offset || 0;
-
-    console.log(`[${requestId}] Effective params - docType: ${docType}, limit: ${limit}, offset: ${offset}`);
-
     // Validate userId
     if (!input.userId) {
       console.error(`[${requestId}] userId is missing!`);
       throw new Error("userId is required");
     }
 
+    // Parse and validate pagination parameters for prescriptions
+    const prescriptionsPage = Math.max(1, input.prescriptionsPage || 1);
+    const prescriptionsLimit = Math.min(Math.max(1, input.prescriptionsLimit || 10), 100);
+    const prescriptionsOffset = (prescriptionsPage - 1) * prescriptionsLimit;
+
+    // Parse and validate pagination parameters for reports
+    const reportsPage = Math.max(1, input.reportsPage || 1);
+    const reportsLimit = Math.min(Math.max(1, input.reportsLimit || 10), 100);
+    const reportsOffset = (reportsPage - 1) * reportsLimit;
+
+    console.log(`[${requestId}] Effective pagination:`, {
+      prescriptions: { page: prescriptionsPage, limit: prescriptionsLimit, offset: prescriptionsOffset },
+      reports: { page: reportsPage, limit: reportsLimit, offset: reportsOffset },
+    });
+
     // Initialize results
     let prescriptions: Prescription[] = [];
+    let prescriptionsTotal = 0;
     let reports: Report[] = [];
-    let totalCount = 0;
+    let reportsTotal = 0;
 
-    // Fetch prescriptions if requested
-    if (docType === "prescriptions" || docType === "all") {
-      console.log(`[${requestId}] Fetching prescriptions for user: ${input.userId}`);
-      console.log(`[${requestId}] Prescription filters - status: ${input.status}, fromDate: ${input.fromDate}, toDate: ${input.toDate}`);
+    // Fetch prescriptions
+    console.log(`[${requestId}] Fetching prescriptions for user: ${input.userId}`);
+    console.log(`[${requestId}] Prescription filters - status: ${input.prescriptionsStatus}, fromDate: ${input.prescriptionsFromDate}, toDate: ${input.prescriptionsToDate}`);
 
-      let query = supabaseAdmin
-        .from("medical_prescriptions")
-        .select("*", { count: "exact" })
-        .eq("user_id", input.userId);
+    let prescriptionsQuery = supabaseAdmin
+      .from("medical_prescriptions")
+      .select("*", { count: "exact" })
+      .eq("user_id", input.userId);
 
-      console.log(`[${requestId}] Query initialized with user_id filter`);
+    console.log(`[${requestId}] Prescriptions query initialized with user_id filter`);
 
-      // Apply status filter
-      if (input.status) {
-        console.log(`[${requestId}] Adding status filter: ${input.status}`);
-        query = query.eq("status", input.status);
-      }
-
-      // Apply date range filters
-      if (input.fromDate) {
-        console.log(`[${requestId}] Adding fromDate filter: ${input.fromDate}`);
-        query = query.gte("prescribed_date", input.fromDate);
-      }
-      if (input.toDate) {
-        console.log(`[${requestId}] Adding toDate filter: ${input.toDate}`);
-        query = query.lte("prescribed_date", input.toDate);
-      }
-
-      // Apply pagination
-      console.log(`[${requestId}] Adding order and range - offset: ${offset}, limit: ${limit}`);
-      query = query.order("prescribed_date", { ascending: false }).range(offset, offset + limit - 1);
-
-      console.log(`[${requestId}] Executing prescriptions query...`);
-      const { data: rxData, error: rxError, count } = await query;
-
-      if (rxError) {
-        console.error(`[${requestId}] Prescription query error:`, {
-          code: rxError.code,
-          message: rxError.message,
-          details: rxError.details,
-        });
-        logger.error("DOCUMENTS_PRESCRIPTIONS_ERROR", {
-          requestId,
-          error: rxError.message,
-          code: rxError.code,
-        });
-        throw new Error(`Failed to fetch prescriptions: ${rxError.message}`);
-      }
-
-      console.log(`[${requestId}] Prescriptions query successful - got ${(rxData || []).length} rows, total count: ${count}`);
-
-      prescriptions = (rxData || []).map((rx: any) => {
-        console.log(`[${requestId}] Mapping prescription:`, {
-          id: rx.id,
-          medicationName: rx.medication_name,
-          userId: rx.user_id,
-        });
-        return {
-          id: rx.id,
-          type: "prescription" as const,
-          medicationName: rx.medication_name,
-          dosage: rx.dosage,
-          frequency: rx.frequency,
-          duration: rx.duration,
-          prescribedBy: rx.prescribed_by,
-          prescribedDate: rx.prescribed_date,
-          validUntil: rx.valid_until,
-          pharmacy: rx.pharmacy,
-          sideEffects: rx.side_effects || [],
-          refillsRemaining: rx.refills_remaining || 0,
-          status: rx.status,
-          notes: rx.notes,
-          createdAt: rx.created_at,
-          updatedAt: rx.updated_at,
-        };
-      });
-
-      if (count !== null) {
-        totalCount = count;
-        console.log(`[${requestId}] Total count set to: ${totalCount}`);
-      }
+    // Apply status filter
+    if (input.prescriptionsStatus) {
+      console.log(`[${requestId}] Adding status filter to prescriptions: ${input.prescriptionsStatus}`);
+      prescriptionsQuery = prescriptionsQuery.eq("status", input.prescriptionsStatus);
     }
 
-    // Fetch reports if requested
-    if (docType === "reports" || docType === "all") {
-      console.log(`[${requestId}] Fetching reports for user: ${input.userId}`);
-      console.log(`[${requestId}] Report filters - status: ${input.status}, fromDate: ${input.fromDate}, toDate: ${input.toDate}`);
-
-      let query = supabaseAdmin
-        .from("medical_reports")
-        .select("*", { count: "exact" })
-        .eq("user_id", input.userId);
-
-      console.log(`[${requestId}] Report query initialized with user_id filter`);
-
-      // Apply status filter
-      if (input.status) {
-        console.log(`[${requestId}] Adding status filter to reports: ${input.status}`);
-        query = query.eq("status", input.status);
-      }
-
-      // Apply date range filters
-      if (input.fromDate) {
-        console.log(`[${requestId}] Adding fromDate filter to reports: ${input.fromDate}`);
-        query = query.gte("test_date", input.fromDate);
-      }
-      if (input.toDate) {
-        console.log(`[${requestId}] Adding toDate filter to reports: ${input.toDate}`);
-        query = query.lte("test_date", input.toDate);
-      }
-
-      // Apply pagination
-      console.log(`[${requestId}] Adding order and range to reports - offset: ${offset}, limit: ${limit}`);
-      query = query.order("test_date", { ascending: false }).range(offset, offset + limit - 1);
-
-      console.log(`[${requestId}] Executing reports query...`);
-      const { data: reportData, error: reportError, count } = await query;
-
-      if (reportError) {
-        console.error(`[${requestId}] Report query error:`, {
-          code: reportError.code,
-          message: reportError.message,
-          details: reportError.details,
-        });
-        logger.error("DOCUMENTS_REPORTS_ERROR", {
-          requestId,
-          error: reportError.message,
-          code: reportError.code,
-        });
-        throw new Error(`Failed to fetch reports: ${reportError.message}`);
-      }
-
-      console.log(`[${requestId}] Reports query successful - got ${(reportData || []).length} rows, total count: ${count}`);
-
-      reports = (reportData || []).map((report: any) => {
-        console.log(`[${requestId}] Mapping report:`, {
-          id: report.id,
-          reportTitle: report.report_title,
-          userId: report.user_id,
-        });
-        return {
-          id: report.id,
-          type: "report" as const,
-          reportType: report.report_type,
-          reportTitle: report.report_title,
-          reportCategory: report.report_category,
-          testDate: report.test_date,
-          reportDate: report.report_date,
-          facility: report.facility,
-          performedBy: report.performed_by,
-          referredBy: report.referred_by,
-          normalValues: report.normal_values,
-          reportValues: report.report_values,
-          summary: report.summary,
-          recommendations: report.recommendations || [],
-          attachmentUrl: report.attachment_url,
-          status: report.status,
-          createdAt: report.created_at,
-          updatedAt: report.updated_at,
-        };
-      });
-
-      if (count !== null) {
-        totalCount = count;
-        console.log(`[${requestId}] Total count for reports set to: ${totalCount}`);
-      }
+    // Apply date range filters
+    if (input.prescriptionsFromDate) {
+      console.log(`[${requestId}] Adding fromDate filter to prescriptions: ${input.prescriptionsFromDate}`);
+      prescriptionsQuery = prescriptionsQuery.gte("prescribed_date", input.prescriptionsFromDate);
+    }
+    if (input.prescriptionsToDate) {
+      console.log(`[${requestId}] Adding toDate filter to prescriptions: ${input.prescriptionsToDate}`);
+      prescriptionsQuery = prescriptionsQuery.lte("prescribed_date", input.prescriptionsToDate);
     }
 
-    // Calculate pagination info
-    const page = Math.floor(offset / limit) + 1;
-    const hasMore = offset + limit < totalCount;
+    // Apply pagination
+    console.log(`[${requestId}] Adding order and range to prescriptions - offset: ${prescriptionsOffset}, limit: ${prescriptionsLimit}`);
+    prescriptionsQuery = prescriptionsQuery.order("prescribed_date", { ascending: false }).range(prescriptionsOffset, prescriptionsOffset + prescriptionsLimit - 1);
 
-    console.log(`[${requestId}] Building response - page: ${page}, hasMore: ${hasMore}, prescriptions: ${prescriptions.length}, reports: ${reports.length}`);
+    console.log(`[${requestId}] Executing prescriptions query...`);
+    const { data: rxData, error: rxError, count: rxCount } = await prescriptionsQuery;
 
-    // Return response with empty states for each segment
+    if (rxError) {
+      console.error(`[${requestId}] Prescription query error:`, {
+        code: rxError.code,
+        message: rxError.message,
+        details: rxError.details,
+      });
+      logger.error("DOCUMENTS_PRESCRIPTIONS_ERROR", {
+        requestId,
+        error: rxError.message,
+        code: rxError.code,
+      });
+      throw new Error(`Failed to fetch prescriptions: ${rxError.message}`);
+    }
+
+    console.log(`[${requestId}] Prescriptions query successful - got ${(rxData || []).length} rows, total count: ${rxCount}`);
+
+    prescriptions = (rxData || []).map((rx: any) => {
+      console.log(`[${requestId}] Mapping prescription:`, {
+        id: rx.id,
+        medicationName: rx.medication_name,
+      });
+      return {
+        id: rx.id,
+        type: "prescription" as const,
+        medicationName: rx.medication_name,
+        dosage: rx.dosage,
+        frequency: rx.frequency,
+        duration: rx.duration,
+        prescribedBy: rx.prescribed_by,
+        prescribedDate: rx.prescribed_date,
+        validUntil: rx.valid_until,
+        pharmacy: rx.pharmacy,
+        sideEffects: rx.side_effects || [],
+        refillsRemaining: rx.refills_remaining || 0,
+        status: rx.status,
+        notes: rx.notes,
+        createdAt: rx.created_at,
+        updatedAt: rx.updated_at,
+      };
+    });
+
+    if (rxCount !== null) {
+      prescriptionsTotal = rxCount;
+      console.log(`[${requestId}] Prescriptions total count set to: ${prescriptionsTotal}`);
+    }
+
+    // Fetch reports
+    console.log(`[${requestId}] Fetching reports for user: ${input.userId}`);
+    console.log(`[${requestId}] Report filters - status: ${input.reportsStatus}, fromDate: ${input.reportsFromDate}, toDate: ${input.reportsToDate}`);
+
+    let reportsQuery = supabaseAdmin
+      .from("medical_reports")
+      .select("*", { count: "exact" })
+      .eq("user_id", input.userId);
+
+    console.log(`[${requestId}] Reports query initialized with user_id filter`);
+
+    // Apply status filter
+    if (input.reportsStatus) {
+      console.log(`[${requestId}] Adding status filter to reports: ${input.reportsStatus}`);
+      reportsQuery = reportsQuery.eq("status", input.reportsStatus);
+    }
+
+    // Apply date range filters
+    if (input.reportsFromDate) {
+      console.log(`[${requestId}] Adding fromDate filter to reports: ${input.reportsFromDate}`);
+      reportsQuery = reportsQuery.gte("test_date", input.reportsFromDate);
+    }
+    if (input.reportsToDate) {
+      console.log(`[${requestId}] Adding toDate filter to reports: ${input.reportsToDate}`);
+      reportsQuery = reportsQuery.lte("test_date", input.reportsToDate);
+    }
+
+    // Apply pagination
+    console.log(`[${requestId}] Adding order and range to reports - offset: ${reportsOffset}, limit: ${reportsLimit}`);
+    reportsQuery = reportsQuery.order("test_date", { ascending: false }).range(reportsOffset, reportsOffset + reportsLimit - 1);
+
+    console.log(`[${requestId}] Executing reports query...`);
+    const { data: reportData, error: reportError, count: reportCount } = await reportsQuery;
+
+    if (reportError) {
+      console.error(`[${requestId}] Report query error:`, {
+        code: reportError.code,
+        message: reportError.message,
+        details: reportError.details,
+      });
+      logger.error("DOCUMENTS_REPORTS_ERROR", {
+        requestId,
+        error: reportError.message,
+        code: reportError.code,
+      });
+      throw new Error(`Failed to fetch reports: ${reportError.message}`);
+    }
+
+    console.log(`[${requestId}] Reports query successful - got ${(reportData || []).length} rows, total count: ${reportCount}`);
+
+    reports = (reportData || []).map((report: any) => {
+      console.log(`[${requestId}] Mapping report:`, {
+        id: report.id,
+        reportTitle: report.report_title,
+      });
+      return {
+        id: report.id,
+        type: "report" as const,
+        reportType: report.report_type,
+        reportTitle: report.report_title,
+        reportCategory: report.report_category,
+        testDate: report.test_date,
+        reportDate: report.report_date,
+        facility: report.facility,
+        performedBy: report.performed_by,
+        referredBy: report.referred_by,
+        normalValues: report.normal_values,
+        reportValues: report.report_values,
+        summary: report.summary,
+        recommendations: report.recommendations || [],
+        attachmentUrl: report.attachment_url,
+        status: report.status,
+        createdAt: report.created_at,
+        updatedAt: report.updated_at,
+      };
+    });
+
+    if (reportCount !== null) {
+      reportsTotal = reportCount;
+      console.log(`[${requestId}] Reports total count set to: ${reportsTotal}`);
+    }
+
+    // Calculate pagination info for prescriptions
+    const prescriptionsHasMore = prescriptionsOffset + prescriptionsLimit < prescriptionsTotal;
+
+    // Calculate pagination info for reports
+    const reportsHasMore = reportsOffset + reportsLimit < reportsTotal;
+
+    console.log(`[${requestId}] Building response:`, {
+      prescriptions: { page: prescriptionsPage, hasMore: prescriptionsHasMore, count: prescriptions.length, total: prescriptionsTotal },
+      reports: { page: reportsPage, hasMore: reportsHasMore, count: reports.length, total: reportsTotal },
+    });
+
+    // Return response with separate pagination for each section
     const response = {
       pageTitle: "Medical Documents",
       backLabel: "Documents",
       prescriptions: {
         documents: prescriptions,
+        pagination: {
+          page: prescriptionsPage,
+          limit: prescriptionsLimit,
+          total: prescriptionsTotal,
+          offset: prescriptionsOffset,
+          hasMore: prescriptionsHasMore,
+        },
         emptyState: {
           title: "No Prescriptions",
           description: "You don't have any prescriptions yet. Add a prescription when needed.",
@@ -313,18 +332,18 @@ export async function getAllDocuments(
       },
       reports: {
         documents: reports,
+        pagination: {
+          page: reportsPage,
+          limit: reportsLimit,
+          total: reportsTotal,
+          offset: reportsOffset,
+          hasMore: reportsHasMore,
+        },
         emptyState: {
           title: "No Medical Reports",
           description: "Your medical reports will appear here. Upload or add reports to view them.",
           imageUrl: null,
         },
-      },
-      pagination: {
-        total: totalCount,
-        page,
-        limit,
-        offset,
-        hasMore,
       },
     };
 
@@ -333,8 +352,9 @@ export async function getAllDocuments(
       requestId,
       userId: input.userId,
       prescriptionsCount: prescriptions.length,
+      prescriptionsTotal: prescriptionsTotal,
       reportsCount: reports.length,
-      total: totalCount,
+      reportsTotal: reportsTotal,
     });
 
     return response;

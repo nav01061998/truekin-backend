@@ -22,12 +22,16 @@ function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
 
 const documentsQuerySchema = z.object({
   userId: z.string().min(1, "userId is required"),
-  type: z.enum(["prescriptions", "reports", "all"]).optional().default("all"),
-  limit: z.coerce.number().int().positive().max(100).optional().default(20),
-  offset: z.coerce.number().int().nonnegative().optional().default(0),
-  status: z.string().optional(),
-  fromDate: z.string().optional(),
-  toDate: z.string().optional(),
+  prescriptionsPage: z.coerce.number().int().min(1).optional().default(1),
+  prescriptionsLimit: z.coerce.number().int().min(1).max(100).optional().default(10),
+  prescriptionsStatus: z.string().optional(),
+  prescriptionsFromDate: z.string().optional(),
+  prescriptionsToDate: z.string().optional(),
+  reportsPage: z.coerce.number().int().min(1).optional().default(1),
+  reportsLimit: z.coerce.number().int().min(1).max(100).optional().default(10),
+  reportsStatus: z.string().optional(),
+  reportsFromDate: z.string().optional(),
+  reportsToDate: z.string().optional(),
 });
 
 export async function registerDocumentsRoutes(app: FastifyInstance) {
@@ -94,34 +98,49 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
       // LOG: About to call getAllDocuments
       console.log(`[${requestId}] Calling getAllDocuments with params:`, {
         userId: queryParams.userId,
-        type: queryParams.type,
-        limit: queryParams.limit,
-        offset: queryParams.offset,
-        status: queryParams.status,
-        fromDate: queryParams.fromDate,
-        toDate: queryParams.toDate,
+        prescriptionsPage: queryParams.prescriptionsPage,
+        prescriptionsLimit: queryParams.prescriptionsLimit,
+        prescriptionsStatus: queryParams.prescriptionsStatus,
+        reportsPage: queryParams.reportsPage,
+        reportsLimit: queryParams.reportsLimit,
+        reportsStatus: queryParams.reportsStatus,
       });
 
       const documentsData = await getAllDocuments({
         userId: queryParams.userId,
         sessionToken,
-        type: queryParams.type,
-        limit: queryParams.limit,
-        offset: queryParams.offset,
-        status: queryParams.status,
-        fromDate: queryParams.fromDate,
-        toDate: queryParams.toDate,
+        prescriptionsPage: queryParams.prescriptionsPage,
+        prescriptionsLimit: queryParams.prescriptionsLimit,
+        prescriptionsStatus: queryParams.prescriptionsStatus,
+        prescriptionsFromDate: queryParams.prescriptionsFromDate,
+        prescriptionsToDate: queryParams.prescriptionsToDate,
+        reportsPage: queryParams.reportsPage,
+        reportsLimit: queryParams.reportsLimit,
+        reportsStatus: queryParams.reportsStatus,
+        reportsFromDate: queryParams.reportsFromDate,
+        reportsToDate: queryParams.reportsToDate,
       });
 
       console.log(`[${requestId}] Successfully fetched documents:`, {
-        prescriptionsCount: documentsData.prescriptions.documents.length,
-        reportsCount: documentsData.reports.documents.length,
-        total: documentsData.pagination.total,
+        prescriptions: {
+          count: documentsData.prescriptions.documents.length,
+          total: documentsData.prescriptions.pagination.total,
+          page: documentsData.prescriptions.pagination.page,
+          hasMore: documentsData.prescriptions.pagination.hasMore,
+        },
+        reports: {
+          count: documentsData.reports.documents.length,
+          total: documentsData.reports.pagination.total,
+          page: documentsData.reports.pagination.page,
+          hasMore: documentsData.reports.pagination.hasMore,
+        },
       });
       logger.info("DOCUMENTS_API_SUCCESS", {
         requestId,
         prescriptionsCount: documentsData.prescriptions.documents.length,
+        prescriptionsTotal: documentsData.prescriptions.pagination.total,
         reportsCount: documentsData.reports.documents.length,
+        reportsTotal: documentsData.reports.pagination.total,
       });
 
       return documentsData;
