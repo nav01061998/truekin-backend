@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
 import { getAllDocuments } from "../services/documents-service.js";
+import { assertValidSession } from "../services/session-service.js";
 import logger from "../lib/logger.js";
 
 function readHeader(value: unknown): string | undefined {
@@ -9,19 +10,8 @@ function readHeader(value: unknown): string | undefined {
   return undefined;
 }
 
-function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
-  return {
-    userId:
-      readHeader(request.headers["x-user-id"]) ||
-      readHeader(request.headers["X-User-Id"]),
-    sessionToken:
-      readHeader(request.headers["x-session-token"]) ||
-      readHeader(request.headers["X-Session-Token"]),
-  };
-}
-
+// Query parameters schema - NO userId here (comes from headers)
 const documentsQuerySchema = z.object({
-  userId: z.string().min(1, "userId is required"),
   prescriptionsPage: z.coerce.number().int().min(1).optional().default(1),
   prescriptionsLimit: z.coerce.number().int().min(1).max(100).optional().default(10),
   prescriptionsStatus: z.string().optional(),
@@ -40,74 +30,69 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
     const requestId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     try {
-      // LOG: Request received
-      logger.info("DOCUMENTS_API_REQUEST", {
-        requestId,
-        method: "GET",
-        path: "/v1/documents",
-        query: request.query,
-        headers: {
-          userId: request.headers["x-user-id"],
-          sessionToken: request.headers["x-session-token"] ? "***REDACTED***" : "MISSING",
-        },
-      });
+      // STEP 1: Extract authentication from headers FIRST (BEFORE any validation)
+      console.log(`[${requestId}] Step 1: Extracting auth from headers`);
+      const userId = readHeader(request.headers["x-user-id"]) || readHeader(request.headers["X-User-Id"]);
+      const sessionToken = readHeader(request.headers["x-session-token"]) || readHeader(request.headers["X-Session-Token"]);
 
-      // Parse query parameters
-      console.log(`[${requestId}] Parsing query parameters:`, request.query);
-      const queryParams = documentsQuerySchema.parse(request.query);
-      console.log(`[${requestId}] Query params parsed successfully:`, queryParams);
-      logger.info("DOCUMENTS_QUERY_PARSED", { requestId, queryParams });
-
-      // Extract auth from headers
-      console.log(`[${requestId}] Extracting auth from headers`);
-      const { userId, sessionToken } = getAuthFromRequest(request);
       console.log(`[${requestId}] Auth extracted - userId: ${userId ? "present" : "MISSING"}, sessionToken: ${sessionToken ? "present" : "MISSING"}`);
 
+      // Validate auth headers exist
       if (!userId || !sessionToken) {
-        console.warn(`[${requestId}] Missing auth - userId or sessionToken missing`);
-        logger.warn("DOCUMENTS_MISSING_AUTH", {
+        console.warn(`[${requestId}] Missing authentication headers`);
+        logger.warn("DOCUMENTS_MISSING_AUTH", { requestId, hasUserId: !!userId, hasSessionToken: !!sessionToken });
+        return reply.code(401).send({
+          success: false,
+          error: "Missing authentication headers",
+          code: "MISSING_AUTH",
           requestId,
-          hasUserId: !!userId,
-          hasSessionToken: !!sessionToken,
         });
+      }
+
+      // STEP 2: Validate session
+      console.log(`[${requestId}] Step 2: Validating session for user: ${userId}`);
+      let authUser;
+      try {
+        authUser = await assertValidSession({ userId, sessionToken });
+        console.log(`[${requestId}] Session validated successfully`);
+        logger.info("DOCUMENTS_SESSION_VALID", { requestId, userId });
+      } catch (sessionError) {
+        const errorMsg = sessionError instanceof Error ? sessionError.message : String(sessionError);
+        console.error(`[${requestId}] Session validation failed:`, errorMsg);
+        logger.error("DOCUMENTS_SESSION_INVALID", { requestId, userId, error: errorMsg });
         return reply.code(401).send({
           success: false,
           error: "Invalid or expired session token",
           code: "UNAUTHORIZED",
           requestId,
+          message: errorMsg,
         });
       }
 
-      // Verify requested userId matches authenticated user (security check)
-      console.log(`[${requestId}] Verifying userId match - queryUserId: ${queryParams.userId}, authUserId: ${userId}`);
-      if (queryParams.userId !== userId) {
-        console.warn(`[${requestId}] UserId mismatch!`);
-        logger.warn("DOCUMENTS_USERID_MISMATCH", {
-          requestId,
-          queryUserId: queryParams.userId,
-          authUserId: userId,
-        });
-        return reply.code(403).send({
+      // STEP 3: Parse and validate query parameters (separate from auth)
+      console.log(`[${requestId}] Step 3: Parsing query parameters:`, request.query);
+      let queryParams;
+      try {
+        queryParams = documentsQuerySchema.parse(request.query);
+        console.log(`[${requestId}] Query params validated successfully:`, queryParams);
+        logger.info("DOCUMENTS_QUERY_PARSED", { requestId, queryParams });
+      } catch (validationError) {
+        const firstError = validationError instanceof ZodError ? validationError.issues[0] : null;
+        const errorMsg = firstError?.message || "Validation error";
+        console.error(`[${requestId}] Query validation failed:`, errorMsg);
+        logger.error("DOCUMENTS_QUERY_VALIDATION_ERROR", { requestId, error: errorMsg });
+        return reply.code(400).send({
           success: false,
-          error: "Unauthorized to access this user's documents",
-          code: "FORBIDDEN",
+          error: errorMsg,
+          code: "INVALID_PAGINATION",
           requestId,
         });
       }
 
-      // LOG: About to call getAllDocuments
-      console.log(`[${requestId}] Calling getAllDocuments with params:`, {
-        userId: queryParams.userId,
-        prescriptionsPage: queryParams.prescriptionsPage,
-        prescriptionsLimit: queryParams.prescriptionsLimit,
-        prescriptionsStatus: queryParams.prescriptionsStatus,
-        reportsPage: queryParams.reportsPage,
-        reportsLimit: queryParams.reportsLimit,
-        reportsStatus: queryParams.reportsStatus,
-      });
-
+      // STEP 4: Fetch documents
+      console.log(`[${requestId}] Step 4: Fetching documents for user: ${userId}`);
       const documentsData = await getAllDocuments({
-        userId: queryParams.userId,
+        userId,
         sessionToken,
         prescriptionsPage: queryParams.prescriptionsPage,
         prescriptionsLimit: queryParams.prescriptionsLimit,
@@ -121,7 +106,8 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
         reportsToDate: queryParams.reportsToDate,
       });
 
-      console.log(`[${requestId}] Successfully fetched documents:`, {
+      // STEP 5: Return response
+      console.log(`[${requestId}] Step 5: Successfully built response:`, {
         prescriptions: {
           count: documentsData.prescriptions.documents.length,
           total: documentsData.prescriptions.pagination.total,
@@ -137,6 +123,7 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
       });
       logger.info("DOCUMENTS_API_SUCCESS", {
         requestId,
+        userId,
         prescriptionsCount: documentsData.prescriptions.documents.length,
         prescriptionsTotal: documentsData.prescriptions.pagination.total,
         reportsCount: documentsData.reports.documents.length,
@@ -148,58 +135,19 @@ export async function registerDocumentsRoutes(app: FastifyInstance) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : "No stack trace";
 
-      console.error(`[${requestId}] ERROR:`, {
+      console.error(`[${requestId}] FATAL ERROR:`, {
         name: error instanceof Error ? error.constructor.name : "Unknown",
         message: errorMessage,
         stack: errorStack,
-        error: error,
       });
 
-      logger.error("DOCUMENTS_API_ERROR", {
+      logger.error("DOCUMENTS_API_FATAL_ERROR", {
         requestId,
         errorName: error instanceof Error ? error.constructor.name : "Unknown",
         errorMessage: errorMessage,
         errorStack: errorStack,
       });
 
-      if (error instanceof ZodError) {
-        console.error(`[${requestId}] ZodError - validation failed:`, error.issues);
-        const firstError = error.issues[0];
-        logger.error("DOCUMENTS_VALIDATION_ERROR", {
-          requestId,
-          issues: error.issues,
-        });
-        return reply.code(400).send({
-          success: false,
-          error: firstError.message || "Validation error",
-          code: "MISSING_REQUIRED_FIELD",
-          requestId,
-          details: error.issues,
-        });
-      }
-
-      if (errorMessage.includes("Unauthorized") || errorMessage.includes("Session expired")) {
-        console.error(`[${requestId}] Session error detected`);
-        return reply.code(401).send({
-          success: false,
-          error: "Invalid or expired session token",
-          code: "UNAUTHORIZED",
-          requestId,
-          message: errorMessage,
-        });
-      }
-
-      if (errorMessage.includes("userId is required")) {
-        console.error(`[${requestId}] userId required error`);
-        return reply.code(400).send({
-          success: false,
-          error: "userId is required",
-          code: "MISSING_REQUIRED_FIELD",
-          requestId,
-        });
-      }
-
-      console.error(`[${requestId}] Unhandled error in documents route:`, error);
       return reply.code(500).send({
         success: false,
         error: "Internal server error",
