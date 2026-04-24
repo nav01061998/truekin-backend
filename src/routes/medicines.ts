@@ -1,22 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z, ZodError } from "zod";
 import { addMedicine, getMedicinesList } from "../services/medicines-service.js";
+import { assertValidSession } from "../services/session-service.js";
+import logger from "../lib/logger.js";
 
 function readHeader(value: unknown): string | undefined {
   if (typeof value === "string") return value;
   if (Array.isArray(value) && typeof value[0] === "string") return value[0];
   return undefined;
-}
-
-function getAuthFromRequest(request: { headers: Record<string, unknown> }) {
-  return {
-    userId:
-      readHeader(request.headers["x-user-id"]) ||
-      readHeader(request.headers["X-User-Id"]),
-    sessionToken:
-      readHeader(request.headers["x-session-token"]) ||
-      readHeader(request.headers["X-Session-Token"]),
-  };
 }
 
 const addMedicineSchema = z.object({
@@ -30,20 +21,69 @@ const addMedicineSchema = z.object({
   status: z.enum(["active", "inactive", "discontinued"]),
 });
 
+// Query parameters schema - NO userId here (comes from headers)
+const medicinesQuerySchema = z.object({
+  consumingPage: z.coerce.number().int().min(1).optional().default(1),
+  consumingLimit: z.coerce.number().int().min(1).max(100).optional().default(10),
+  pastPage: z.coerce.number().int().min(1).optional().default(1),
+  pastLimit: z.coerce.number().int().min(1).max(100).optional().default(10),
+});
+
 export async function registerMedicinesRoutes(app: FastifyInstance) {
-  // Add medicine endpoint
+  // POST /api/medicines/add - Add a new medicine
   app.post("/api/medicines/add", async (request, reply) => {
+    const requestId = `med-add-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     try {
-      const body = addMedicineSchema.parse(request.body);
-      const { userId, sessionToken } = getAuthFromRequest(request);
+      // STEP 1: Extract authentication from headers FIRST
+      console.log(`[${requestId}] Step 1: Extracting auth from headers`);
+      const userId = readHeader(request.headers["x-user-id"]) || readHeader(request.headers["X-User-Id"]);
+      const sessionToken = readHeader(request.headers["x-session-token"]) || readHeader(request.headers["X-Session-Token"]);
 
       if (!userId || !sessionToken) {
+        console.warn(`[${requestId}] Missing authentication headers`);
         return reply.code(401).send({
           success: false,
-          message: "Invalid or expired session token",
+          error: "Missing authentication headers",
+          code: "MISSING_AUTH",
+          requestId,
         });
       }
 
+      // STEP 2: Validate session
+      console.log(`[${requestId}] Step 2: Validating session`);
+      try {
+        await assertValidSession({ userId, sessionToken });
+      } catch (sessionError) {
+        const errorMsg = sessionError instanceof Error ? sessionError.message : String(sessionError);
+        console.error(`[${requestId}] Session validation failed:`, errorMsg);
+        return reply.code(401).send({
+          success: false,
+          error: "Invalid or expired session token",
+          code: "UNAUTHORIZED",
+          requestId,
+        });
+      }
+
+      // STEP 3: Validate request body
+      console.log(`[${requestId}] Step 3: Validating request body`);
+      let body;
+      try {
+        body = addMedicineSchema.parse(request.body);
+      } catch (validationError) {
+        const firstError = validationError instanceof ZodError ? validationError.issues[0] : null;
+        const errorMsg = firstError?.message || "Validation error";
+        console.error(`[${requestId}] Body validation failed:`, errorMsg);
+        return reply.code(400).send({
+          success: false,
+          error: errorMsg,
+          code: "VALIDATION_ERROR",
+          requestId,
+        });
+      }
+
+      // STEP 4: Add medicine
+      console.log(`[${requestId}] Step 4: Adding medicine`);
       const { medicine, medicinesList } = await addMedicine({
         userId,
         sessionToken,
@@ -57,98 +97,133 @@ export async function registerMedicinesRoutes(app: FastifyInstance) {
         status: body.status,
       });
 
+      console.log(`[${requestId}] Medicine added successfully:`, medicine.id);
+      logger.info("MEDICINES_ADD_SUCCESS", { requestId, userId, medicineId: medicine.id });
+
       return {
         data: medicinesList,
       };
     } catch (error) {
-      if (error instanceof ZodError) {
-        const firstError = error.issues[0];
-        return reply.code(400).send({
-          success: false,
-          message: firstError.message || "Validation error",
-        });
-      }
-
-      const message = error instanceof Error ? error.message : "Failed to add medicine";
-
-      // Handle specific error cases
-      if (message.includes("Unauthorized") || message.includes("Session expired")) {
-        return reply.code(401).send({
-          success: false,
-          message: "Invalid or expired session token",
-        });
-      }
-
-      if (message.includes("not authenticated")) {
-        return reply.code(403).send({
-          success: false,
-          message: "User not authenticated",
-        });
-      }
-
-      if (message.includes("already exists")) {
-        return reply.code(409).send({
-          success: false,
-          message: message,
-        });
-      }
-
-      if (message.includes("is required") || message.includes("Invalid")) {
-        return reply.code(400).send({
-          success: false,
-          message: message,
-        });
-      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[${requestId}] Fatal error:`, errorMessage);
+      logger.error("MEDICINES_ADD_ERROR", { requestId, error: errorMessage });
 
       return reply.code(500).send({
         success: false,
-        message: "Internal server error. Please try again later.",
+        error: "Internal server error",
+        code: "INTERNAL_ERROR",
+        requestId,
+        message: errorMessage,
       });
     }
   });
 
-  // Get medicines list endpoint
-  app.get("/api/medicines/list", async (request, reply) => {
+  // GET /v1/medicines - Get medicines list with pagination
+  app.get("/v1/medicines", async (request, reply) => {
+    const requestId = `med-list-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     try {
-      const { userId, sessionToken } = getAuthFromRequest(request);
+      // STEP 1: Extract authentication from headers FIRST
+      console.log(`[${requestId}] Step 1: Extracting auth from headers`);
+      const userId = readHeader(request.headers["x-user-id"]) || readHeader(request.headers["X-User-Id"]);
+      const sessionToken = readHeader(request.headers["x-session-token"]) || readHeader(request.headers["X-Session-Token"]);
 
       if (!userId || !sessionToken) {
+        console.warn(`[${requestId}] Missing authentication headers`);
+        logger.warn("MEDICINES_MISSING_AUTH", { requestId });
         return reply.code(401).send({
           success: false,
-          message: "Invalid or expired session token",
+          error: "Missing authentication headers",
+          code: "MISSING_AUTH",
+          requestId,
         });
       }
 
-      // Verify session
-      const { getCurrentUserProfile } = await import("../services/profile-service.js");
-      await getCurrentUserProfile({ userId, sessionToken });
+      // STEP 2: Validate session
+      console.log(`[${requestId}] Step 2: Validating session`);
+      try {
+        await assertValidSession({ userId, sessionToken });
+      } catch (sessionError) {
+        const errorMsg = sessionError instanceof Error ? sessionError.message : String(sessionError);
+        console.error(`[${requestId}] Session validation failed:`, errorMsg);
+        logger.error("MEDICINES_SESSION_INVALID", { requestId, error: errorMsg });
+        return reply.code(401).send({
+          success: false,
+          error: "Invalid or expired session token",
+          code: "UNAUTHORIZED",
+          requestId,
+          message: errorMsg,
+        });
+      }
 
-      const medicinesList = await getMedicinesList(userId);
+      // STEP 3: Parse and validate query parameters
+      console.log(`[${requestId}] Step 3: Parsing query parameters:`, request.query);
+      let queryParams;
+      try {
+        queryParams = medicinesQuerySchema.parse(request.query);
+        console.log(`[${requestId}] Query params validated:`, queryParams);
+      } catch (validationError) {
+        const firstError = validationError instanceof ZodError ? validationError.issues[0] : null;
+        const errorMsg = firstError?.message || "Validation error";
+        console.error(`[${requestId}] Query validation failed:`, errorMsg);
+        logger.error("MEDICINES_QUERY_VALIDATION_ERROR", { requestId, error: errorMsg });
+        return reply.code(400).send({
+          success: false,
+          error: errorMsg,
+          code: "INVALID_PAGINATION",
+          requestId,
+        });
+      }
+
+      // STEP 4: Fetch medicines list
+      console.log(`[${requestId}] Step 4: Fetching medicines list`);
+      const medicinesList = await getMedicinesList({
+        userId,
+        consumingPage: queryParams.consumingPage,
+        consumingLimit: queryParams.consumingLimit,
+        pastPage: queryParams.pastPage,
+        pastLimit: queryParams.pastLimit,
+      });
+
+      console.log(`[${requestId}] Medicines list fetched successfully`);
+      logger.info("MEDICINES_FETCH_SUCCESS", {
+        requestId,
+        userId,
+        consumingCount: medicinesList.consumingCurrently.medicines.length,
+        pastSections: medicinesList.pastMedicines.sections.length,
+      });
 
       return {
         data: medicinesList,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to fetch medicines";
-
-      if (message.includes("Unauthorized") || message.includes("Session expired")) {
-        return reply.code(401).send({
-          success: false,
-          message: "Invalid or expired session token",
-        });
-      }
-
-      if (message.includes("not authenticated")) {
-        return reply.code(403).send({
-          success: false,
-          message: "User not authenticated",
-        });
-      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[${requestId}] Fatal error:`, errorMessage);
+      logger.error("MEDICINES_FETCH_ERROR", { requestId, error: errorMessage });
 
       return reply.code(500).send({
         success: false,
-        message: "Internal server error. Please try again later.",
+        error: "Internal server error",
+        code: "INTERNAL_ERROR",
+        requestId,
+        message: errorMessage,
       });
     }
+  });
+
+  // GET /api/medicines/list - Legacy endpoint (redirects to /v1/medicines)
+  app.get("/api/medicines/list", async (request, reply) => {
+    // Build query string from request.query
+    const queryEntries: string[] = [];
+    if (request.query && typeof request.query === "object") {
+      for (const [key, value] of Object.entries(request.query)) {
+        if (value !== null && value !== undefined) {
+          queryEntries.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+        }
+      }
+    }
+    const queryString = queryEntries.length > 0 ? `?${queryEntries.join("&")}` : "";
+    const redirectUrl = `/v1/medicines${queryString}`;
+    return reply.redirect(redirectUrl);
   });
 }
